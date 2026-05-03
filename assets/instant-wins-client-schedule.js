@@ -2,8 +2,14 @@
  * Client-side schedule filter for instant-win prizes + toggle count sync.
  *
  * Intercepts window.fetch for /wp-json/nera/v1/instant-wins/<id>, filters
- * schedule prizes by the visitor's local clock, fixes stats, and rewrites
- * the PHP-rendered toggle (#instant-wins-toggle-btn) so it always matches Vue.
+ * schedule prizes using `schedule_at` / `schedule_end` as **browser-local** wall
+ * times ({@see neraIwtParseScheduleLocalMs}) with {@see Date.now()}, and syncs stats.
+ *
+ * Schedule prize (`rule_type === 'schedule'`) visibility:
+ * - Start only: show when schedule_at <= now (now has reached or passed start).
+ * - Start + end: show when schedule_at <= now <= schedule_end (inclusive).
+ * - End only (rare): show when now <= schedule_end.
+ * - Neither bound parseable: do not filter out (show).
  *
  * Header counts start hidden (nera-iwt-header-counts--pending) until the first
  * successful client-filtered response, or a timeout fallback to server-rendered text.
@@ -23,7 +29,42 @@
 	var neraIwtBootstrapTimer = null;
 
 	/**
-	 * Parse schedule_at for local-time comparison (no Z / offset suffix).
+	 * Whether a schedule-rule prize row should appear (browser-local wall clock).
+	 *
+	 * @param {object} prize REST prize row (`rule_type`, `schedule_at`, `schedule_end`).
+	 * @param {number} now    Date.now() in ms.
+	 * @return {boolean}
+	 */
+	function neraIwtSchedulePrizeVisibleInClientWindow( prize, now ) {
+		if ( prize.rule_type !== 'schedule' ) {
+			return true;
+		}
+		var atStr =
+			prize.schedule_at && typeof prize.schedule_at === 'string'
+				? prize.schedule_at.trim()
+				: '';
+		var endStr =
+			prize.schedule_end && typeof prize.schedule_end === 'string'
+				? prize.schedule_end.trim()
+				: '';
+		var atMs = atStr ? neraIwtParseScheduleLocalMs( atStr ) : NaN;
+		var endMs = endStr ? neraIwtParseScheduleLocalMs( endStr ) : NaN;
+		var hasAt = atStr !== '' && ! isNaN( atMs );
+		var hasEnd = endStr !== '' && ! isNaN( endMs );
+		if ( hasAt && hasEnd ) {
+			return now >= atMs && now <= endMs;
+		}
+		if ( hasAt ) {
+			return now >= atMs;
+		}
+		if ( hasEnd ) {
+			return now <= endMs;
+		}
+		return true;
+	}
+
+	/**
+	 * Parse schedule_at / schedule_end for local-time comparison (no Z / offset suffix).
 	 *
 	 * @param {string} raw Raw string from REST (e.g. "2026-05-03T16:20" or "2026-05-03 16:20:00").
 	 * @return {number} epoch ms or NaN
@@ -248,14 +289,10 @@
 				var now = Date.now();
 
 				var filtered = prizes.filter( function ( prize ) {
-					if ( prize.rule_type !== 'schedule' || ! prize.schedule_at ) {
+					if ( prize.rule_type !== 'schedule' ) {
 						return true;
 					}
-					var at = neraIwtParseScheduleLocalMs( prize.schedule_at );
-					if ( isNaN( at ) ) {
-						return true;
-					}
-					return now >= at;
+					return neraIwtSchedulePrizeVisibleInClientWindow( prize, now );
 				} );
 
 				var totalWon = 0;

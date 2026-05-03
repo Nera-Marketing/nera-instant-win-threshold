@@ -83,6 +83,13 @@ body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibi
 	display: block !important;
 }
 
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibility-table-fields .nera-iwt-schedule-end:disabled,
+#lty_lottery_instant_winners_rule_modal .nera-iwt-rule-visibility-fields .nera-iwt-schedule-end:disabled,
+#lty_lottery_instant_winners_rule_modal.modal .nera-iwt-rule-visibility-fields .nera-iwt-schedule-end:disabled {
+	opacity: 0.55;
+	cursor: not-allowed;
+}
+
 body.post-type-product .lty-instant-winners-rules-contents td.nera-iwt-public-rule-type-column {
 	vertical-align: top;
 	min-width: 200px;
@@ -99,8 +106,47 @@ body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibi
 
 body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibility-table-fields select.nera-iwt-public-rule-type,
 body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibility-table-fields .nera-iwt-schedule-at,
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibility-table-fields .nera-iwt-schedule-end,
 body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibility-table-fields .nera-iwt-ticket-pct {
 	width: 100%;
 	max-width: 100%;
 	box-sizing: border-box;
+}
+
+/* Schedule end + clear (×); flex overrides width:100% on the inner datetime input */
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibility-table-fields .nera-iwt-schedule-end-field,
+#lty_lottery_instant_winners_rule_modal .nera-iwt-rule-visibility-fields .nera-iwt-schedule-end-field,
+#lty_lottery_instant_winners_rule_modal.modal .nera-iwt-rule-visibility-fields .nera-iwt-schedule-end-field {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	width: 100%;
+	max-width: 100%;
+	box-sizing: border-box;
+}
+
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibility-table-fields .nera-iwt-schedule-end-field .nera-iwt-schedule-end,
+#lty_lottery_instant_winners_rule_modal .nera-iwt-rule-visibility-fields .nera-iwt-schedule-end-field .nera-iwt-schedule-end,
+#lty_lottery_instant_winners_rule_modal.modal .nera-iwt-rule-visibility-fields .nera-iwt-schedule-end-field .nera-iwt-schedule-end {
+	flex: 1 1 auto;
+	min-width: 0;
+	width: auto;
+	max-width: 100%;
+}
+
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibility-table-fields .nera-iwt-schedule-end-field .nera-iwt-schedule-end-clear,
+#lty_lottery_instant_winners_rule_modal .nera-iwt-rule-visibility-fields .nera-iwt-schedule-end-field .nera-iwt-schedule-end-clear,
+#lty_lottery_instant_winners_rule_modal.modal .nera-iwt-rule-visibility-fields .nera-iwt-schedule-end-field .nera-iwt-schedule-end-clear {
+	flex: 0 0 auto;
+	line-height: 1;
+	min-width: 28px;
+	padding-left: 6px;
+	padding-right: 6px;
+}
+
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibility-table-fields .nera-iwt-schedule-end-field .nera-iwt-schedule-end-clear:disabled,
+#lty_lottery_instant_winners_rule_modal .nera-iwt-rule-visibility-fields .nera-iwt-schedule-end-field .nera-iwt-schedule-end-clear:disabled,
+#lty_lottery_instant_winners_rule_modal.modal .nera-iwt-rule-visibility-fields .nera-iwt-schedule-end-field .nera-iwt-schedule-end-clear:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
 }

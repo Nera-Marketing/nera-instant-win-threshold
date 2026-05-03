@@ -15,7 +15,7 @@ defined( 'ABSPATH' ) || exit;
  * Resolved visibility settings for a log, read from the parent rule post.
  *
  * @param int $log_id Log post ID.
- * @return array{rule_id:int,type:string,schedule_gmt:string,schedule_local:string,ticket_pct:int}|null Null if no rule found.
+ * @return array{rule_id:int,type:string,schedule_gmt:string,schedule_local:string,schedule_end_gmt:string,schedule_end_local:string,ticket_pct:int}|null Null if no rule found.
  */
 function nera_iwt_resolve_rule_visibility_for_log( $log_id ) {
 	$log_id = absint( $log_id );
@@ -34,11 +34,13 @@ function nera_iwt_resolve_rule_visibility_for_log( $log_id ) {
 	}
 
 	return array(
-		'rule_id'        => $rule_id,
-		'type'           => $type,
-		'schedule_gmt'   => trim( (string) get_post_meta( $rule_id, 'nera_iwt_schedule_at_gmt', true ) ),
-		'schedule_local' => trim( (string) get_post_meta( $rule_id, 'nera_iwt_schedule_at_local', true ) ),
-		'ticket_pct'     => max( 0, min( 100, intval( get_post_meta( $rule_id, 'nera_iwt_ticket_pct', true ) ) ) ),
+		'rule_id'             => $rule_id,
+		'type'                => $type,
+		'schedule_gmt'        => trim( (string) get_post_meta( $rule_id, 'nera_iwt_schedule_at_gmt', true ) ),
+		'schedule_local'      => trim( (string) get_post_meta( $rule_id, 'nera_iwt_schedule_at_local', true ) ),
+		'schedule_end_gmt'    => trim( (string) get_post_meta( $rule_id, 'nera_iwt_schedule_end_gmt', true ) ),
+		'schedule_end_local'  => trim( (string) get_post_meta( $rule_id, 'nera_iwt_schedule_end_local', true ) ),
+		'ticket_pct'          => max( 0, min( 100, intval( get_post_meta( $rule_id, 'nera_iwt_ticket_pct', true ) ) ) ),
 	);
 }
 
@@ -110,6 +112,92 @@ function nera_iwt_parse_schedule_gmt( $stored ) {
 }
 
 /**
+ * Server-side schedule window (WP site timezone first, then UTC meta).
+ *
+ * Product rules (same comparisons as client when wall strings align with site TZ):
+ * - Schedule at only (no end): show when now >= start.
+ * - Schedule at + Schedule end: show when start <= now <= end (inclusive).
+ * - End only (unusual): show when now <= end.
+ *
+ * REST + {@see instant-wins-client-schedule.js} use the visitor's browser clock on
+ * datetime-local strings from the API instead of this function (skip_schedule).
+ *
+ * @param int   $log_id Log post ID (for debug).
+ * @param array $vis    {@see nera_iwt_resolve_rule_visibility_for_log()}.
+ * @return bool
+ */
+function nera_iwt_schedule_storefront_visible_without_skip( $log_id, array $vis ) {
+	$log_id = absint( $log_id );
+
+	$now_local = null;
+	try {
+		$now_local = new DateTimeImmutable( 'now', wp_timezone() );
+	} catch ( Exception $e ) {
+		$now_local = null;
+	}
+
+	$at_l  = isset( $vis['schedule_local'] ) ? trim( (string) $vis['schedule_local'] ) : '';
+	$end_l = isset( $vis['schedule_end_local'] ) ? trim( (string) $vis['schedule_end_local'] ) : '';
+
+	if ( $now_local instanceof DateTimeImmutable && ( '' !== $at_l || '' !== $end_l ) ) {
+		$at_dt  = '' !== $at_l ? nera_iwt_parse_schedule_local_wp_timezone( $at_l ) : null;
+		$end_dt = '' !== $end_l ? nera_iwt_parse_schedule_local_wp_timezone( $end_l ) : null;
+
+		if ( null !== $at_dt || null !== $end_dt ) {
+			if ( null !== $at_dt && null !== $end_dt ) {
+				$show = ( $now_local >= $at_dt && $now_local <= $end_dt );
+				$reason = $show ? 'schedule_in_window_wp_tz' : 'schedule_outside_window_wp_tz';
+			} elseif ( null !== $at_dt ) {
+				$show   = ( $now_local >= $at_dt );
+				$reason = $show ? 'schedule_reached_wp_tz' : 'schedule_pending_wp_tz';
+			} else {
+				$show   = ( $now_local <= $end_dt );
+				$reason = $show ? 'schedule_before_end_wp_tz' : 'schedule_past_end_wp_tz';
+			}
+			nera_iwt_debug_log_visibility(
+				$log_id,
+				$reason,
+				$show,
+				$vis + array(
+					'now_local' => $now_local->format( 'Y-m-d H:i:s' ),
+				)
+			);
+			return $show;
+		}
+	}
+
+	$at_gmt  = trim( (string) ( $vis['schedule_gmt'] ?? '' ) );
+	$end_gmt = trim( (string) ( $vis['schedule_end_gmt'] ?? '' ) );
+	$at_utc  = '' !== $at_gmt ? nera_iwt_parse_schedule_gmt( $at_gmt ) : null;
+	$end_utc = '' !== $end_gmt ? nera_iwt_parse_schedule_gmt( $end_gmt ) : null;
+
+	if ( null === $at_utc && null === $end_utc ) {
+		nera_iwt_debug_log_visibility( $log_id, 'schedule_no_bounds', true, $vis );
+		return true;
+	}
+
+	$t = time();
+	if ( null !== $at_utc && null !== $end_utc ) {
+		$show   = ( $t >= $at_utc->getTimestamp() && $t <= $end_utc->getTimestamp() );
+		$reason = $show ? 'schedule_in_window_utc' : 'schedule_outside_window_utc';
+	} elseif ( null !== $at_utc ) {
+		$show   = ( $t >= $at_utc->getTimestamp() );
+		$reason = $show ? 'schedule_reached' : 'schedule_pending';
+	} else {
+		$show   = ( $t <= $end_utc->getTimestamp() );
+		$reason = $show ? 'schedule_before_end_utc' : 'schedule_past_end_utc';
+	}
+
+	nera_iwt_debug_log_visibility(
+		$log_id,
+		$reason,
+		$show,
+		$vis + array( 'now_utc' => gmdate( 'Y-m-d H:i:s' ) )
+	);
+	return $show;
+}
+
+/**
  * Visibility decision for a non-won log row.
  *
  * @param int        $log_id  Log post ID.
@@ -142,45 +230,7 @@ function nera_iwt_available_log_visible_on_storefront( $log_id, $product, array 
 			nera_iwt_debug_log_visibility( $log_id, 'schedule_delegated_to_client', true, $vis );
 			return true;
 		}
-		$local_raw = isset( $vis['schedule_local'] ) ? trim( (string) $vis['schedule_local'] ) : '';
-		if ( '' !== $local_raw ) {
-			$at_local = nera_iwt_parse_schedule_local_wp_timezone( $local_raw );
-			if ( null !== $at_local ) {
-				try {
-					$now_local = new DateTimeImmutable( 'now', wp_timezone() );
-					$show      = $now_local >= $at_local;
-					nera_iwt_debug_log_visibility(
-						$log_id,
-						$show ? 'schedule_reached_wp_tz' : 'schedule_pending_wp_tz',
-						$show,
-						$vis + array(
-							'now_local' => $now_local->format( 'Y-m-d H:i:s' ),
-							'at_local'  => $at_local->format( 'Y-m-d H:i:s' ),
-						)
-					);
-					return $show;
-				} catch ( Exception $e ) {
-					// Fall through to GMT.
-				}
-			}
-		}
-		if ( '' === $vis['schedule_gmt'] ) {
-			nera_iwt_debug_log_visibility( $log_id, 'schedule_no_date', true, $vis );
-			return true;
-		}
-		$at_utc = nera_iwt_parse_schedule_gmt( $vis['schedule_gmt'] );
-		if ( null === $at_utc ) {
-			nera_iwt_debug_log_visibility( $log_id, 'schedule_unparseable', true, $vis );
-			return true;
-		}
-		$show = time() >= $at_utc->getTimestamp();
-		nera_iwt_debug_log_visibility(
-			$log_id,
-			$show ? 'schedule_reached' : 'schedule_pending',
-			$show,
-			$vis + array( 'now_utc' => gmdate( 'Y-m-d H:i:s' ) )
-		);
-		return $show;
+		return nera_iwt_schedule_storefront_visible_without_skip( $log_id, $vis );
 	}
 
 	if ( NERA_IWT_RULE_TYPE_TICKET_PCT === $vis['type'] ) {

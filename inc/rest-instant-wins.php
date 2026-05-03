@@ -148,23 +148,33 @@ function nera_iwt_rest_instant_wins_validate_product( $product_id ) {
 }
 
 /**
+ * Pick which log supplies rule/schedule meta for a prize_message + rule group.
+ *
+ * Uses the **first** log in LFW list order for that bucket (see md5 key in
+ * {@see nera_iwt_rest_instant_wins_build_payload()}).
+ * (Changing this breaks merged groups when multiple rules share the same prize text.)
+ *
+ * @param int[] $log_ids Log post IDs sharing one prize_message key.
+ * @return int Representative log ID, or 0.
+ */
+function nera_iwt_rest_pick_representative_log_for_prize_group( array $log_ids ) {
+	return absint( $log_ids[0] ?? 0 );
+}
+
+/**
  * Build instant-wins REST payload (prize groups + stats).
  *
- * Uses nera_iwt_get_rest_instant_winner_log_ids() which skips server-side
- * schedule filtering — schedule prizes are included but carry a `schedule_at`
- * field (local datetime string, no timezone suffix) so client-side JavaScript
- * can compare against the visitor's browser local time and filter accordingly.
- *
- * Per-prize `total_available` = total log rows in that group (won + not won).
- * Top-level `stats` include ALL returned prizes; the client JS recalculates
- * after filtering out schedule-pending prizes.
+ * Uses nera_iwt_get_rest_instant_winner_log_ids() which skips server-side schedule
+ * filtering. Prizes are grouped by md5( prize_message + rule_id ) so two schedule
+ * rules with the same prize text do not clobber each other. Each row includes
+ * `schedule_at` / `schedule_end` use the same source as the admin table: when GMT
+ * meta is set it is converted to datetime-local strings; otherwise stored local meta.
  *
  * @param int $product_id Product ID.
  * @return array<string,mixed>|WP_Error
  */
 function nera_iwt_rest_instant_wins_build_payload( $product_id ) {
 	try {
-		// Use REST-specific getter: schedule prizes are NOT filtered server-side.
 		$instant_winner_ids = nera_iwt_get_rest_instant_winner_log_ids( $product_id );
 
 		$product = wc_get_product( $product_id );
@@ -176,66 +186,111 @@ function nera_iwt_rest_instant_wins_build_payload( $product_id ) {
 			);
 		}
 
-		$prizes_grouped = array();
+		$key_to_ids = array();
 
 		foreach ( $instant_winner_ids as $instant_winner_id ) {
+			$instant_winner_id = absint( $instant_winner_id );
+			if ( $instant_winner_id <= 0 ) {
+				continue;
+			}
 			$instant_winner = lty_get_instant_winner_log( $instant_winner_id );
+			if ( ! is_object( $instant_winner ) || ! method_exists( $instant_winner, 'get_prize_message' ) ) {
+				continue;
+			}
+			$rule_for_key = nera_iwt_get_instant_winner_rule_id_for_log( $instant_winner_id );
+			$key            = md5( $instant_winner->get_prize_message() . "\x1f" . $rule_for_key );
+			$key_to_ids[ $key ][] = $instant_winner_id;
+		}
 
-			if ( ! is_object( $instant_winner ) ) {
+		$prizes_grouped = array();
+
+		foreach ( $key_to_ids as $key => $log_ids ) {
+			if ( ! is_array( $log_ids ) || empty( $log_ids ) ) {
 				continue;
 			}
 
-			$prize_message = $instant_winner->get_prize_message();
-			$key           = md5( $prize_message );
-
-			if ( ! isset( $prizes_grouped[ $key ] ) ) {
-				/*
-				 * Use nera_iwt_resolve_rule_visibility_for_log() — it reads directly
-				 * from the parent RULE post and applies the INSTANT default for any
-				 * missing/unknown meta, making it the only reliable source of truth.
-				 * nera_iwt_get_post_meta_log_then_rule() can silently return '' when
-				 * the log's post_parent is not set, causing rule_type to be empty and
-				 * the JS schedule filter to skip every prize.
-				 */
-				$vis         = nera_iwt_resolve_rule_visibility_for_log( $instant_winner_id );
-				$rule_type   = $vis ? $vis['type'] : NERA_IWT_RULE_TYPE_INSTANT;
-				$schedule_at = '';
-
-				if ( NERA_IWT_RULE_TYPE_SCHEDULE === $rule_type ) {
-					$rule_id = $vis ? $vis['rule_id'] : 0;
-					// Prefer the raw local input string saved by the admin's browser.
-					if ( $rule_id > 0 ) {
-						$schedule_at = (string) get_post_meta( $rule_id, 'nera_iwt_schedule_at_local', true );
-					}
-					if ( '' === $schedule_at && $vis && '' !== $vis['schedule_gmt'] ) {
-						// Fallback: rules saved before nera_iwt_schedule_at_local existed —
-						// convert stored UTC string to WP local so JS new Date() parses as local time.
-						$schedule_at = nera_iwt_schedule_gmt_to_local_input( $vis['schedule_gmt'] );
-					}
-				}
-
-				$prizes_grouped[ $key ] = array(
-					'id'              => $key,
-					'title'           => wp_strip_all_tags( $prize_message ),
-					'image'           => nera_iwt_rest_instant_wins_extract_image_url( $instant_winner->get_image() ),
-					'total_available' => 0,
-					'won_count'       => 0,
-					'winners'         => array(),
-					// Extra fields consumed by client-side schedule filter JS.
-					'rule_type'       => $rule_type,
-					'schedule_at'     => $schedule_at,
-				);
+			$rep_id = nera_iwt_rest_pick_representative_log_for_prize_group( $log_ids );
+			if ( $rep_id <= 0 ) {
+				continue;
 			}
 
-			$prizes_grouped[ $key ]['total_available']++;
+			$rep_winner = lty_get_instant_winner_log( $rep_id );
+			if ( ! is_object( $rep_winner ) || ! method_exists( $rep_winner, 'get_prize_message' ) ) {
+				continue;
+			}
 
-			if ( method_exists( $instant_winner, 'has_status' ) && $instant_winner->has_status( 'lty_won' ) ) {
-				$prizes_grouped[ $key ]['won_count']++;
+			$prize_message = $rep_winner->get_prize_message();
+			$vis           = nera_iwt_resolve_rule_visibility_for_log( $rep_id );
+			$rule_type     = $vis ? $vis['type'] : NERA_IWT_RULE_TYPE_INSTANT;
 
-				$winner_details = nera_iwt_rest_instant_wins_format_winner_details( $instant_winner );
+			$schedule_at      = '';
+			$schedule_end     = '';
+			$schedule_at_utc  = '';
+			$schedule_end_utc = '';
 
-				if ( $winner_details ) {
-					$prizes_grouped[ $key ]['winners'][] = $winner_details;
+			if ( NERA_IWT_RULE_TYPE_SCHEDULE === $rule_type && $vis ) {
+				$rule_id = (int) $vis['rule_id'];
+				$at_gmt_row   = '';
+				$end_gmt_row  = '';
+				$at_local_row = '';
+				$end_local_row = '';
+				if ( $rule_id > 0 ) {
+					$at_gmt_row    = trim( (string) get_post_meta( $rule_id, 'nera_iwt_schedule_at_gmt', true ) );
+					$end_gmt_row   = trim( (string) get_post_meta( $rule_id, 'nera_iwt_schedule_end_gmt', true ) );
+					$at_local_row  = trim( (string) get_post_meta( $rule_id, 'nera_iwt_schedule_at_local', true ) );
+					$end_local_row = trim( (string) get_post_meta( $rule_id, 'nera_iwt_schedule_end_local', true ) );
+				}
+				// Match admin table: canonical wall times come from GMT meta when set (avoids stale _local).
+				$schedule_at = ( '' !== $at_gmt_row )
+					? nera_iwt_schedule_gmt_to_local_input( $at_gmt_row )
+					: $at_local_row;
+				if ( '' === $schedule_at && '' !== trim( (string) $vis['schedule_gmt'] ) ) {
+					$schedule_at = nera_iwt_schedule_gmt_to_local_input( $vis['schedule_gmt'] );
+				}
+				$schedule_end = ( '' !== $end_gmt_row )
+					? nera_iwt_schedule_gmt_to_local_input( $end_gmt_row )
+					: $end_local_row;
+				$end_gmt_vis = isset( $vis['schedule_end_gmt'] ) ? trim( (string) $vis['schedule_end_gmt'] ) : '';
+				if ( '' === $schedule_end && '' !== $end_gmt_vis ) {
+					$schedule_end = nera_iwt_schedule_gmt_to_local_input( $end_gmt_vis );
+				}
+				$schedule_at_utc  = $at_gmt_row;
+				$schedule_end_utc = $end_gmt_row;
+			}
+
+			$schedule_at  = trim( (string) $schedule_at );
+			$schedule_end = trim( (string) $schedule_end );
+
+			$prizes_grouped[ $key ] = array(
+				'id'                 => $key,
+				'title'              => wp_strip_all_tags( $prize_message ),
+				'image'              => nera_iwt_rest_instant_wins_extract_image_url( $rep_winner->get_image() ),
+				'total_available'    => 0,
+				'won_count'          => 0,
+				'winners'            => array(),
+				'rule_type'          => $rule_type,
+				'schedule_at'        => $schedule_at,
+				'schedule_end'       => $schedule_end,
+				'schedule_at_utc'    => $schedule_at_utc,
+				'schedule_end_utc'   => $schedule_end_utc,
+			);
+
+			foreach ( $log_ids as $log_id ) {
+				$log_id = absint( $log_id );
+				if ( $log_id <= 0 ) {
+					continue;
+				}
+				$instant_winner = lty_get_instant_winner_log( $log_id );
+				if ( ! is_object( $instant_winner ) ) {
+					continue;
+				}
+				$prizes_grouped[ $key ]['total_available']++;
+				if ( method_exists( $instant_winner, 'has_status' ) && $instant_winner->has_status( 'lty_won' ) ) {
+					$prizes_grouped[ $key ]['won_count']++;
+					$winner_details = nera_iwt_rest_instant_wins_format_winner_details( $instant_winner );
+					if ( $winner_details ) {
+						$prizes_grouped[ $key ]['winners'][] = $winner_details;
+					}
 				}
 			}
 		}

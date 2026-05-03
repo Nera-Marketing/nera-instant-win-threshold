@@ -7,6 +7,62 @@
 (function ($) {
 	'use strict';
 
+	function neraIwtClampTicketPctValue(raw) {
+		var n = parseInt(String(raw === undefined || raw === null ? '0' : raw), 10);
+		if (isNaN(n)) {
+			n = 0;
+		}
+		return String(Math.max(0, Math.min(100, n)));
+	}
+
+	function neraIwtNormalizeRowParts(type, sched, schedEnd, pct) {
+		var p = neraIwtClampTicketPctValue(pct);
+		if (type !== 'schedule') {
+			return { type: type, sched: sched, schedEnd: schedEnd, pct: p };
+		}
+		var atv = String(sched || '');
+		var endv = String(schedEnd || '');
+		if (!atv) {
+			endv = '';
+		} else if (endv && endv < atv) {
+			endv = atv;
+		}
+		return { type: type, sched: atv, schedEnd: endv, pct: p };
+	}
+
+	function neraIwtClampScheduleEndAgainstAt($at, $end) {
+		var atv = String($at.val() || '');
+		var endv = String($end.val() || '');
+		if (!atv || !endv) {
+			return;
+		}
+		if (endv < atv) {
+			$end.val(atv);
+		}
+	}
+
+	/**
+	 * Schedule End is disabled until Schedule at has a value; min mirrors Schedule at.
+	 */
+	function neraIwtSyncScheduleEndControl($wrap) {
+		var $at = $wrap.find('.nera-iwt-schedule-at').first();
+		var $end = $wrap.find('.nera-iwt-schedule-end').first();
+		if (!$at.length || !$end.length) {
+			return;
+		}
+		var v = String($wrap.find('.nera-iwt-public-rule-type').first().val() || 'instant');
+		var atVal = String($at.val() || '');
+		if (v !== 'schedule' || !atVal) {
+			$end.prop('disabled', true).removeAttr('min').val('');
+			$wrap.find('.nera-iwt-schedule-end-clear').prop('disabled', true);
+			return;
+		}
+		$end.prop('disabled', false);
+		$wrap.find('.nera-iwt-schedule-end-clear').prop('disabled', false);
+		$end.attr('min', atVal);
+		neraIwtClampScheduleEndAgainstAt($at, $end);
+	}
+
 	function updateVisibilityFields($wrap) {
 		var $sel = $wrap.find('.nera-iwt-public-rule-type').first();
 		if (!$sel.length) {
@@ -17,12 +73,22 @@
 		$wrap.toggleClass('nera-iwt--show-ticket-pct', v === 'ticket_pct');
 		// Drop any inline display (e.g. from other scripts) so class-based CSS wins.
 		$wrap.find('.nera-iwt-row-schedule, .nera-iwt-row-ticket-pct').css('display', '');
+		neraIwtSyncScheduleEndControl($wrap);
 	}
 
 	function refreshAll() {
 		$('.nera-iwt-rule-visibility-fields').each(function () {
 			updateVisibilityFields($(this));
 		});
+	}
+
+	/**
+	 * LFW binds click/change on `.lty-instant-winner-rule` with preventDefault(), which breaks
+	 * native datetime-local and select UI. Our fields omit that class; mirror LFW dirty-state here.
+	 */
+	function neraIwtMarkInstantWinnersRulesDirty() {
+		$('.lty-save-instant-winners-rules').prop('disabled', false);
+		$('.lty-unsaved-instant-winner-rules').val('1');
 	}
 
 	function movePopupFieldsToTop() {
@@ -90,12 +156,13 @@
 
 	function neraIwtReadVisibilityFromAddRuleModal($m) {
 		if (!$m || !$m.length) {
-			return { type: 'instant', sched: '', pct: '0' };
+			return neraIwtNormalizeRowParts('instant', '', '', '0');
 		}
 		var type = String($m.find('.nera-iwt-public-rule-type').first().val() || 'instant');
 		var sched = type === 'schedule' ? String($m.find('.nera-iwt-schedule-at').first().val() || '') : '';
+		var schedEnd = type === 'schedule' ? String($m.find('.nera-iwt-schedule-end').first().val() || '') : '';
 		var pct = type === 'ticket_pct' ? String($m.find('.nera-iwt-ticket-pct').first().val() || '0') : '0';
-		return { type: type, sched: sched, pct: pct };
+		return neraIwtNormalizeRowParts(type, sched, schedEnd, pct);
 	}
 
 	function neraIwtIsLtyAddInstantWinnerRuleAjaxData(data) {
@@ -114,6 +181,8 @@
 			encodeURIComponent(v.type) +
 			'&instant_winner_rule[nera_schedule_at]=' +
 			encodeURIComponent(v.sched) +
+			'&instant_winner_rule[nera_schedule_end]=' +
+			encodeURIComponent(v.schedEnd || '') +
 			'&instant_winner_rule[nera_ticket_pct]=' +
 			encodeURIComponent(v.pct);
 		return dataStr + (dataStr.length ? '&' : '') + q;
@@ -165,10 +234,13 @@
 			}
 			var type = String($wrap.find('.nera-iwt-public-rule-type').first().val() || 'instant');
 			var sched = type === 'schedule' ? String($wrap.find('.nera-iwt-schedule-at').first().val() || '') : '';
+			var schedEnd = type === 'schedule' ? String($wrap.find('.nera-iwt-schedule-end').first().val() || '') : '';
 			var pct = type === 'ticket_pct' ? String($wrap.find('.nera-iwt-ticket-pct').first().val() || '0') : '0';
-			row.nera_public_rule_type = type;
-			row.nera_schedule_at = sched;
-			row.nera_ticket_pct = pct;
+			var pl = neraIwtNormalizeRowParts(type, sched, schedEnd, pct);
+			row.nera_public_rule_type = pl.type;
+			row.nera_schedule_at = pl.sched;
+			row.nera_schedule_end = pl.schedEnd;
+			row.nera_ticket_pct = pl.pct;
 		});
 	}
 
@@ -190,20 +262,26 @@
 			}
 			var type = String($wrap.find('.nera-iwt-public-rule-type').first().val() || 'instant');
 			var sched = type === 'schedule' ? String($wrap.find('.nera-iwt-schedule-at').first().val() || '') : '';
+			var schedEnd = type === 'schedule' ? String($wrap.find('.nera-iwt-schedule-end').first().val() || '') : '';
 			var pct = type === 'ticket_pct' ? String($wrap.find('.nera-iwt-ticket-pct').first().val() || '0') : '0';
+			var pl = neraIwtNormalizeRowParts(type, sched, schedEnd, pct);
 			var base = 'instant_winners_rules[' + id + ']';
 			parts.push(
 				base +
 					'[nera_public_rule_type]=' +
-					encodeURIComponent(type) +
+					encodeURIComponent(pl.type) +
 					'&' +
 					base +
 					'[nera_schedule_at]=' +
-					encodeURIComponent(sched) +
+					encodeURIComponent(pl.sched) +
+					'&' +
+					base +
+					'[nera_schedule_end]=' +
+					encodeURIComponent(pl.schedEnd) +
 					'&' +
 					base +
 					'[nera_ticket_pct]=' +
-					encodeURIComponent(pct)
+					encodeURIComponent(pl.pct)
 			);
 		});
 		if (!parts.length) {
@@ -232,6 +310,7 @@
 			}
 			d.instant_winner_rule.nera_public_rule_type = v.type;
 			d.instant_winner_rule.nera_schedule_at = v.sched;
+			d.instant_winner_rule.nera_schedule_end = v.schedEnd || '';
 			d.instant_winner_rule.nera_ticket_pct = v.pct;
 			return;
 		}
@@ -261,6 +340,49 @@
 		if ($wrap.length) {
 			updateVisibilityFields($wrap);
 		}
+		neraIwtMarkInstantWinnersRulesDirty();
+	});
+
+	$(document).on('input change', '.nera-iwt-schedule-at', function () {
+		var $wrap = $(this).closest('.nera-iwt-rule-visibility-fields');
+		if ($wrap.length) {
+			neraIwtSyncScheduleEndControl($wrap);
+		}
+		neraIwtMarkInstantWinnersRulesDirty();
+	});
+
+	$(document).on('change blur', '.nera-iwt-schedule-end', function () {
+		var $wrap = $(this).closest('.nera-iwt-rule-visibility-fields');
+		if (!$wrap.length) {
+			return;
+		}
+		neraIwtClampScheduleEndAgainstAt($wrap.find('.nera-iwt-schedule-at').first(), $(this));
+		neraIwtMarkInstantWinnersRulesDirty();
+	});
+
+	$(document).on('click', '.nera-iwt-schedule-end-clear', function (e) {
+		e.preventDefault();
+		var $btn = $(this);
+		var $end = $btn.closest('.nera-iwt-schedule-end-field').find('.nera-iwt-schedule-end').first();
+		if (!$end.length || $end.prop('disabled')) {
+			return;
+		}
+		$end.val('');
+		var $wrap = $end.closest('.nera-iwt-rule-visibility-fields');
+		if ($wrap.length) {
+			neraIwtClampScheduleEndAgainstAt($wrap.find('.nera-iwt-schedule-at').first(), $end);
+		}
+		$end.trigger('change');
+		neraIwtMarkInstantWinnersRulesDirty();
+	});
+
+	$(document).on('input change blur', '.nera-iwt-ticket-pct', function () {
+		var $el = $(this);
+		var c = neraIwtClampTicketPctValue($el.val());
+		if (String($el.val()) !== c) {
+			$el.val(c);
+		}
+		neraIwtMarkInstantWinnersRulesDirty();
 	});
 
 	$(function () {

@@ -11,7 +11,7 @@ defined( 'ABSPATH' ) || exit;
  * Bump when REST payload shape or client-side schedule logic changes.
  * {@see nera_iwt_maybe_flush_instant_wins_api_cache_on_upgrade()} wipes old transients.
  */
-const NERA_IWT_INSTANT_WINS_PAYLOAD_SCHEMA = 'v10';
+const NERA_IWT_INSTANT_WINS_PAYLOAD_SCHEMA = 'v17';
 
 /**
  * Transient key for plugin instant-wins REST JSON.
@@ -73,6 +73,13 @@ function nera_iwt_instant_wins_legacy_cache_keys( $product_id ) {
 		'nera_iwt_instant_wins_api_v7_' . $pid,
 		'nera_iwt_instant_wins_api_v8_' . $pid,
 		'nera_iwt_instant_wins_api_v9_' . $pid,
+		'nera_iwt_instant_wins_api_v10_' . $pid,
+		'nera_iwt_instant_wins_api_v11_' . $pid,
+		'nera_iwt_instant_wins_api_v12_' . $pid,
+		'nera_iwt_instant_wins_api_v13_' . $pid,
+		'nera_iwt_instant_wins_api_v14_' . $pid,
+		'nera_iwt_instant_wins_api_v15_' . $pid,
+		'nera_iwt_instant_wins_api_v16_' . $pid,
 		'nera_instant_wins_cache_' . $pid,
 	);
 }

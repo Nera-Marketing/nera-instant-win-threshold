@@ -104,20 +104,34 @@ function nera_iwt_persist_rule_visibility_meta( $rule_id, array $row ) {
 
 	update_post_meta( $rule_id, 'nera_iwt_public_rule_type', $type );
 
-	$gmt       = '';
-	$local_raw = '';
+	$gmt           = '';
+	$local_raw     = '';
+	$gmt_end       = '';
+	$local_raw_end = '';
 	if ( NERA_IWT_RULE_TYPE_SCHEDULE === $type && ! empty( $row['nera_schedule_at'] ) ) {
 		$local_raw = sanitize_text_field( (string) $row['nera_schedule_at'] );
 		$gmt       = nera_iwt_schedule_local_string_to_gmt( $local_raw );
 	}
+	if ( NERA_IWT_RULE_TYPE_SCHEDULE === $type && ! empty( $row['nera_schedule_end'] ) ) {
+		$local_raw_end = sanitize_text_field( (string) $row['nera_schedule_end'] );
+		$gmt_end       = nera_iwt_schedule_local_string_to_gmt( $local_raw_end );
+	}
+	// End requires start; cannot be earlier than Schedule at (datetime-local strings compare lexicographically).
+	if ( '' === $local_raw && '' !== $local_raw_end ) {
+		$local_raw_end = '';
+		$gmt_end       = '';
+	}
+	if ( '' !== $local_raw && '' !== $local_raw_end && strcmp( $local_raw_end, $local_raw ) < 0 ) {
+		$local_raw_end = $local_raw;
+		$gmt_end       = nera_iwt_schedule_local_string_to_gmt( $local_raw_end );
+	}
 	update_post_meta( $rule_id, 'nera_iwt_schedule_at_gmt', $gmt );
 	// Raw local string (e.g. "2026-05-03T16:20") kept for client-side schedule comparison.
 	update_post_meta( $rule_id, 'nera_iwt_schedule_at_local', $local_raw );
+	update_post_meta( $rule_id, 'nera_iwt_schedule_end_gmt', $gmt_end );
+	update_post_meta( $rule_id, 'nera_iwt_schedule_end_local', $local_raw_end );
 
-	$pct = 0;
-	if ( NERA_IWT_RULE_TYPE_TICKET_PCT === $type ) {
-		$pct = max( 0, min( 100, intval( $row['nera_ticket_pct'] ?? 0 ) ) );
-	}
+	$pct = max( 0, min( 100, intval( $row['nera_ticket_pct'] ?? 0 ) ) );
 	update_post_meta( $rule_id, 'nera_iwt_ticket_pct', $pct );
 
 	nera_iwt_push_rule_visibility_to_child_logs( $rule_id );
@@ -162,7 +176,14 @@ function nera_iwt_push_rule_visibility_to_child_logs( $rule_id ) {
 		return;
 	}
 
-	$keys = array( 'nera_iwt_public_rule_type', 'nera_iwt_schedule_at_gmt', 'nera_iwt_schedule_at_local', 'nera_iwt_ticket_pct' );
+	$keys = array(
+		'nera_iwt_public_rule_type',
+		'nera_iwt_schedule_at_gmt',
+		'nera_iwt_schedule_at_local',
+		'nera_iwt_schedule_end_gmt',
+		'nera_iwt_schedule_end_local',
+		'nera_iwt_ticket_pct',
+	);
 	foreach ( $logs as $log_id ) {
 		$log_id = absint( $log_id );
 		if ( $log_id <= 0 ) {
@@ -235,6 +256,9 @@ function nera_iwt_normalize_add_rule_visibility_payload( array $rule ) {
 	if ( ! array_key_exists( 'nera_schedule_at', $rule ) ) {
 		$rule['nera_schedule_at'] = '';
 	}
+	if ( ! array_key_exists( 'nera_schedule_end', $rule ) ) {
+		$rule['nera_schedule_end'] = '';
+	}
 	if ( ! array_key_exists( 'nera_ticket_pct', $rule ) ) {
 		$rule['nera_ticket_pct'] = '0';
 	}
@@ -257,6 +281,9 @@ function nera_iwt_merge_raw_rule_row_nera_keys( array $rule, $raw_row ) {
 	}
 	if ( array_key_exists( 'nera_schedule_at', $raw_row ) ) {
 		$rule['nera_schedule_at'] = sanitize_text_field( (string) $raw_row['nera_schedule_at'] );
+	}
+	if ( array_key_exists( 'nera_schedule_end', $raw_row ) ) {
+		$rule['nera_schedule_end'] = sanitize_text_field( (string) $raw_row['nera_schedule_end'] );
 	}
 	if ( array_key_exists( 'nera_ticket_pct', $raw_row ) ) {
 		$rule['nera_ticket_pct'] = sanitize_text_field( (string) $raw_row['nera_ticket_pct'] );
@@ -609,7 +636,7 @@ function nera_iwt_sync_visibility_meta_to_log( $post_id, $post ) {
 		return;
 	}
 
-	foreach ( array( 'nera_iwt_public_rule_type', 'nera_iwt_schedule_at_gmt', 'nera_iwt_schedule_at_local', 'nera_iwt_ticket_pct' ) as $meta_key ) {
+	foreach ( array( 'nera_iwt_public_rule_type', 'nera_iwt_schedule_at_gmt', 'nera_iwt_schedule_at_local', 'nera_iwt_schedule_end_gmt', 'nera_iwt_schedule_end_local', 'nera_iwt_ticket_pct' ) as $meta_key ) {
 		$v = get_post_meta( $rule_id, $meta_key, true );
 		update_post_meta( $post_id, $meta_key, $v );
 	}
@@ -641,7 +668,7 @@ function nera_iwt_admin_rule_column_header() {
 add_action( 'lty_instant_winner_rule_column', 'nera_iwt_admin_rule_column_header', 5 );
 
 /**
- * Admin: editable table cell (Rule type, Schedule at, Ticket sold %) — same behaviour as Add Rule modal.
+ * Admin: editable table cell (Rule type, Schedule at / end, Ticket sold %) — same behaviour as Add Rule modal.
  *
  * @param LTY_Instant_Winner_Rule $instant_winner Rule object.
  */
@@ -653,9 +680,11 @@ function nera_iwt_admin_rule_column_cell( $instant_winner ) {
 	$rule_id     = (int) $instant_winner->get_id();
 	$type        = get_post_meta( $rule_id, 'nera_iwt_public_rule_type', true );
 	$type        = in_array( (string) $type, nera_iwt_public_rule_type_slugs(), true ) ? (string) $type : NERA_IWT_RULE_TYPE_INSTANT;
-	$sched_gmt   = (string) get_post_meta( $rule_id, 'nera_iwt_schedule_at_gmt', true );
-	$pct         = max( 0, min( 100, intval( get_post_meta( $rule_id, 'nera_iwt_ticket_pct', true ) ) ) );
-	$sched_local = nera_iwt_schedule_gmt_to_local_input( $sched_gmt );
+	$sched_gmt     = (string) get_post_meta( $rule_id, 'nera_iwt_schedule_at_gmt', true );
+	$sched_end_gmt = (string) get_post_meta( $rule_id, 'nera_iwt_schedule_end_gmt', true );
+	$pct           = max( 0, min( 100, intval( get_post_meta( $rule_id, 'nera_iwt_ticket_pct', true ) ) ) );
+	$sched_local   = nera_iwt_schedule_gmt_to_local_input( $sched_gmt );
+	$sched_end_local = nera_iwt_schedule_gmt_to_local_input( $sched_end_gmt );
 
 	$labels = nera_iwt_public_rule_type_labels();
 	?>
@@ -667,7 +696,7 @@ function nera_iwt_admin_rule_column_cell( $instant_winner ) {
 				</label>
 				<select
 					id="nera-iwt-public-rule-type-<?php echo esc_attr( (string) $rule_id ); ?>"
-					class="nera-iwt-public-rule-type lty-instant-winner-rule"
+					class="nera-iwt-public-rule-type"
 				>
 					<?php foreach ( $labels as $slug => $label ) : ?>
 						<option value="<?php echo esc_attr( $slug ); ?>" <?php selected( $slug, $type, true ); ?>><?php echo esc_html( $label ); ?></option>
@@ -681,10 +710,29 @@ function nera_iwt_admin_rule_column_cell( $instant_winner ) {
 				<input
 					type="datetime-local"
 					id="nera-iwt-schedule-at-<?php echo esc_attr( (string) $rule_id ); ?>"
-					class="nera-iwt-schedule-at lty-instant-winner-rule"
+					class="nera-iwt-schedule-at"
 					value="<?php echo esc_attr( $sched_local ); ?>"
 					step="60"
 				/>
+			</p>
+			<p class="nera-iwt-row-schedule nera-iwt-popup-conditional-row nera-iwt-table-field-row">
+				<label class="screen-reader-text" for="nera-iwt-schedule-end-<?php echo esc_attr( (string) $rule_id ); ?>">
+					<?php esc_html_e( 'Schedule End', 'nera-instant-win-threshold' ); ?>
+				</label>
+				<span class="nera-iwt-schedule-end-field">
+					<input
+						type="datetime-local"
+						id="nera-iwt-schedule-end-<?php echo esc_attr( (string) $rule_id ); ?>"
+						class="nera-iwt-schedule-end"
+						value="<?php echo esc_attr( $sched_end_local ); ?>"
+						step="60"
+					/>
+					<button
+						type="button"
+						class="button button-small nera-iwt-schedule-end-clear"
+						aria-label="<?php echo esc_attr__( 'Clear schedule end', 'nera-instant-win-threshold' ); ?>"
+					>&times;</button>
+				</span>
 			</p>
 			<p class="nera-iwt-row-ticket-pct nera-iwt-popup-conditional-row nera-iwt-table-field-row">
 				<label class="screen-reader-text" for="nera-iwt-ticket-pct-<?php echo esc_attr( (string) $rule_id ); ?>">
@@ -693,10 +741,11 @@ function nera_iwt_admin_rule_column_cell( $instant_winner ) {
 				<input
 					type="number"
 					id="nera-iwt-ticket-pct-<?php echo esc_attr( (string) $rule_id ); ?>"
-					class="nera-iwt-ticket-pct lty-instant-winner-rule"
+					class="nera-iwt-ticket-pct"
 					min="0"
 					max="100"
 					step="1"
+					inputmode="numeric"
 					value="<?php echo esc_attr( (string) $pct ); ?>"
 				/>
 			</p>
@@ -727,9 +776,20 @@ function nera_iwt_admin_popup_fields() {
 			<label><b><?php esc_html_e( 'Schedule at', 'nera-instant-win-threshold' ); ?></b></label>
 			<input type="datetime-local" class="nera-iwt-schedule-at" value="" step="60" />
 		</p>
+		<p class="nera-iwt-row-schedule nera-iwt-popup-conditional-row">
+			<label><b><?php esc_html_e( 'Schedule End', 'nera-instant-win-threshold' ); ?></b></label>
+			<span class="nera-iwt-schedule-end-field">
+				<input type="datetime-local" class="nera-iwt-schedule-end" value="" step="60" />
+				<button
+					type="button"
+					class="button button-small nera-iwt-schedule-end-clear"
+					aria-label="<?php echo esc_attr__( 'Clear schedule end', 'nera-instant-win-threshold' ); ?>"
+				>&times;</button>
+			</span>
+		</p>
 		<p class="nera-iwt-row-ticket-pct nera-iwt-popup-conditional-row">
 			<label><b><?php esc_html_e( 'Ticket sold (%)', 'nera-instant-win-threshold' ); ?></b></label>
-			<input type="number" min="0" max="100" step="1" class="nera-iwt-ticket-pct" value="0" />
+			<input type="number" min="0" max="100" step="1" inputmode="numeric" class="nera-iwt-ticket-pct" value="0" />
 		</p>
 	</div>
 	<?php
