@@ -1,0 +1,106 @@
+/**
+ * Instant win rule visibility: conditional popup fields, editable list column,
+ * and modal overlap fixes — scoped to the product edit screen.
+ */
+
+/* ------------------------------------------------------------------------- */
+/* Popup "Add rule" — Rule type → Schedule at / Ticket sold (%) visibility  */
+/* Scoped to modal id so LFW .lty-instant-winners-rule-content p rules lose. */
+/* ------------------------------------------------------------------------- */
+
+#lty_lottery_instant_winners_rule_modal .nera-iwt-rule-visibility-fields:not(.nera-iwt--show-schedule) .nera-iwt-row-schedule,
+#lty_lottery_instant_winners_rule_modal .nera-iwt-rule-visibility-fields:not(.nera-iwt--show-ticket-pct) .nera-iwt-row-ticket-pct {
+	display: none !important;
+}
+
+#lty_lottery_instant_winners_rule_modal .nera-iwt-rule-visibility-fields.nera-iwt--show-schedule .nera-iwt-row-schedule,
+#lty_lottery_instant_winners_rule_modal .nera-iwt-rule-visibility-fields.nera-iwt--show-ticket-pct .nera-iwt-row-ticket-pct {
+	display: block !important;
+}
+
+/* Same rules when jquery-modal adds .modal to the same node */
+#lty_lottery_instant_winners_rule_modal.modal .nera-iwt-rule-visibility-fields:not(.nera-iwt--show-schedule) .nera-iwt-row-schedule,
+#lty_lottery_instant_winners_rule_modal.modal .nera-iwt-rule-visibility-fields:not(.nera-iwt--show-ticket-pct) .nera-iwt-row-ticket-pct {
+	display: none !important;
+}
+
+#lty_lottery_instant_winners_rule_modal.modal .nera-iwt-rule-visibility-fields.nera-iwt--show-schedule .nera-iwt-row-schedule,
+#lty_lottery_instant_winners_rule_modal.modal .nera-iwt-rule-visibility-fields.nera-iwt--show-ticket-pct .nera-iwt-row-ticket-pct {
+	display: block !important;
+}
+
+/* ------------------------------------------------------------------------- */
+/* jquery-modal default z-index is 1/2; raise only the Instant Winners modal */
+/* ------------------------------------------------------------------------- */
+
+body.post-type-product .blocker.jquery-modal.blocker.current {
+	z-index: 100100 !important;
+}
+
+body.post-type-product #lty_lottery_instant_winners_rule_modal.modal {
+	position: relative;
+	z-index: 1;
+}
+
+/* Modal header/footer must sit above the scrollable content */
+body.post-type-product #lty_lottery_instant_winners_rule_modal.modal .lty-instant-winners-rule-header,
+body.post-type-product #lty_lottery_instant_winners_rule_modal.modal .lty-instant-winners-rule-footer {
+	position: relative;
+	z-index: 2;
+	background-color: #fff;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Fix: .lty-instant-winners-rule-content (a <table>) overflows the modal    */
+/* container because Lottery uses `display: inline-block; width: 97%`.        */
+/* Scope under the modal id so we do not touch the listing table outside.    */
+/* ------------------------------------------------------------------------- */
+
+body.post-type-product #lty_lottery_instant_winners_rule_modal.modal .lty-instant-winners-rule-content {
+	position: relative;
+	z-index: 1;
+	display: block !important;
+	width: 100% !important;
+	max-width: 100% !important;
+	max-height: 350px !important;
+	margin: 0 !important;
+	box-sizing: border-box !important;
+	overflow-x: hidden !important;
+	overflow-y: auto !important;
+}
+
+/* ------------------------------------------------------------------------- */
+/* List table — Rule type column: same conditional rows as Add Rule modal    */
+/* ------------------------------------------------------------------------- */
+
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibility-table-fields:not(.nera-iwt--show-schedule) .nera-iwt-row-schedule,
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibility-table-fields:not(.nera-iwt--show-ticket-pct) .nera-iwt-row-ticket-pct {
+	display: none !important;
+}
+
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibility-table-fields.nera-iwt--show-schedule .nera-iwt-row-schedule,
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibility-table-fields.nera-iwt--show-ticket-pct .nera-iwt-row-ticket-pct {
+	display: block !important;
+}
+
+body.post-type-product .lty-instant-winners-rules-contents td.nera-iwt-public-rule-type-column {
+	vertical-align: top;
+	min-width: 200px;
+	max-width: 280px;
+}
+
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibility-table-fields .nera-iwt-table-field-row {
+	margin: 0 0 8px;
+}
+
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibility-table-fields .nera-iwt-table-field-row:last-child {
+	margin-bottom: 0;
+}
+
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibility-table-fields select.nera-iwt-public-rule-type,
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibility-table-fields .nera-iwt-schedule-at,
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibility-table-fields .nera-iwt-ticket-pct {
+	width: 100%;
+	max-width: 100%;
+	box-sizing: border-box;
+}
