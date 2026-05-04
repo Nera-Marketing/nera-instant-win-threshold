@@ -1,0 +1,34 @@
+/**
+ * Nera Instant Win Threshold — public instant-win UI tweaks.
+ * Scoped to .instant-wins-section from plugin templates.
+ */
+
+/* "Available" + "Won" chips: equal height (row uses stretch; chips share min-height). */
+.instant-wins-section .nera-iwt-prize-badges {
+	align-items: stretch;
+}
+
+.instant-wins-section .nera-iwt-prize-badges > span {
+	min-height: 2.25rem;
+	box-sizing: border-box;
+	display: inline-flex;
+	align-items: center;
+}
+
+/*
+ * Hide summary + badge counts until instant-wins-client-schedule.js applies the
+ * visitor-local schedule filter (see nera-iwt-header-counts--pending on #instant-wins-toggle-btn).
+ */
+#instant-wins-toggle-btn.nera-iwt-header-counts--pending [data-nera-iwt-prize-summary],
+#instant-wins-toggle-btn.nera-iwt-header-counts--pending .nera-iwt-prize-badges {
+	visibility: hidden;
+}
+
+#instant-wins-toggle-btn.nera-iwt-header-counts--pending .text-left p.text-sm.text-gray-600 {
+	visibility: hidden;
+}
+
+/* Theme template: prize subtitle uses the line above; badges sit in first column child under the right flex group. */
+#instant-wins-toggle-btn.nera-iwt-header-counts--pending .flex.items-center.gap-3 > div.hidden {
+	visibility: hidden;
+}
