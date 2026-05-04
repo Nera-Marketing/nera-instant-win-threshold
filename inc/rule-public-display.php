@@ -1,0 +1,899 @@
+<?php
+/**
+ * Public display rule: Instant vs scheduled vs ticket-% (admin UI + meta persistence).
+ *
+ * Storefront visibility lives in {@see inc/visibility.php}; cache/REST hooks in {@see inc/cache.php}.
+ * This file owns: rule-type constants, schedule-time helpers, admin column/popup UI,
+ * AJAX persistence, and the `posts_results` filter that hides logs from public LFW queries.
+ *
+ * @package Nera_Instant_Win_Threshold
+ */
+
+defined( 'ABSPATH' ) || exit;
+
+/** @var string */
+const NERA_IWT_RULE_TYPE_INSTANT = 'instant';
+
+/** @var string */
+const NERA_IWT_RULE_TYPE_SCHEDULE = 'schedule';
+
+/** @var string */
+const NERA_IWT_RULE_TYPE_TICKET_PCT = 'ticket_pct';
+
+/**
+ * Allowed rule_type values stored in post meta.
+ *
+ * @return string[]
+ */
+function nera_iwt_public_rule_type_slugs() {
+	return array(
+		NERA_IWT_RULE_TYPE_INSTANT,
+		NERA_IWT_RULE_TYPE_SCHEDULE,
+		NERA_IWT_RULE_TYPE_TICKET_PCT,
+	);
+}
+
+/**
+ * Labels for admin UI.
+ *
+ * @return array<string, string>
+ */
+function nera_iwt_public_rule_type_labels() {
+	return array(
+		NERA_IWT_RULE_TYPE_INSTANT    => __( 'Instant Prize', 'nera-instant-win-threshold' ),
+		NERA_IWT_RULE_TYPE_SCHEDULE   => __( 'Schedule Prize', 'nera-instant-win-threshold' ),
+		NERA_IWT_RULE_TYPE_TICKET_PCT => __( 'Ticket Sold Percentage Prize', 'nera-instant-win-threshold' ),
+	);
+}
+
+/**
+ * @param string $local Datetime-local fragment e.g. 2026-05-03T14:30.
+ * @return string MySQL datetime UTC or empty.
+ */
+function nera_iwt_schedule_local_string_to_gmt( $local ) {
+	$local = trim( (string) $local );
+	if ( '' === $local ) {
+		return '';
+	}
+	try {
+		$dt = DateTimeImmutable::createFromFormat( 'Y-m-d\TH:i', $local, wp_timezone() );
+		if ( ! $dt ) {
+			$dt = new DateTimeImmutable( $local, wp_timezone() );
+		}
+		return $dt->setTimezone( new DateTimeZone( 'UTC' ) )->format( 'Y-m-d H:i:s' );
+	} catch ( Exception $e ) {
+		return '';
+	}
+}
+
+/**
+ * @param string $gmt_mysql UTC mysql datetime.
+ * @return string Value for datetime-local input.
+ */
+function nera_iwt_schedule_gmt_to_local_input( $gmt_mysql ) {
+	$gmt_mysql = trim( (string) $gmt_mysql );
+	if ( '' === $gmt_mysql ) {
+		return '';
+	}
+	try {
+		$utc = new DateTimeImmutable( $gmt_mysql, new DateTimeZone( 'UTC' ) );
+		return $utc->setTimezone( wp_timezone() )->format( 'Y-m-d\TH:i' );
+	} catch ( Exception $e ) {
+		return '';
+	}
+}
+
+/**
+ * Persist visibility meta on an instant-winner rule post.
+ *
+ * Only runs when the row explicitly carries `nera_public_rule_type`; the list table renders
+ * these values read-only, so a bulk save without our fields must preserve previously stored meta.
+ *
+ * @param int   $rule_id Rule post ID.
+ * @param array $row     Row from wc_clean() POST (add or save).
+ */
+function nera_iwt_persist_rule_visibility_meta( $rule_id, array $row ) {
+	if ( ! array_key_exists( 'nera_public_rule_type', $row ) ) {
+		return;
+	}
+
+	$type = sanitize_key( (string) $row['nera_public_rule_type'] );
+	if ( ! in_array( $type, nera_iwt_public_rule_type_slugs(), true ) ) {
+		$type = NERA_IWT_RULE_TYPE_INSTANT;
+	}
+
+	update_post_meta( $rule_id, 'nera_iwt_public_rule_type', $type );
+
+	$gmt           = '';
+	$local_raw     = '';
+	$gmt_end       = '';
+	$local_raw_end = '';
+	if ( NERA_IWT_RULE_TYPE_SCHEDULE === $type && ! empty( $row['nera_schedule_at'] ) ) {
+		$local_raw = sanitize_text_field( (string) $row['nera_schedule_at'] );
+		$gmt       = nera_iwt_schedule_local_string_to_gmt( $local_raw );
+	}
+	if ( NERA_IWT_RULE_TYPE_SCHEDULE === $type && ! empty( $row['nera_schedule_end'] ) ) {
+		$local_raw_end = sanitize_text_field( (string) $row['nera_schedule_end'] );
+		$gmt_end       = nera_iwt_schedule_local_string_to_gmt( $local_raw_end );
+	}
+	// End requires start; cannot be earlier than Schedule at (datetime-local strings compare lexicographically).
+	if ( '' === $local_raw && '' !== $local_raw_end ) {
+		$local_raw_end = '';
+		$gmt_end       = '';
+	}
+	if ( '' !== $local_raw && '' !== $local_raw_end && strcmp( $local_raw_end, $local_raw ) < 0 ) {
+		$local_raw_end = $local_raw;
+		$gmt_end       = nera_iwt_schedule_local_string_to_gmt( $local_raw_end );
+	}
+	update_post_meta( $rule_id, 'nera_iwt_schedule_at_gmt', $gmt );
+	// Raw local string (e.g. "2026-05-03T16:20") kept for client-side schedule comparison.
+	update_post_meta( $rule_id, 'nera_iwt_schedule_at_local', $local_raw );
+	update_post_meta( $rule_id, 'nera_iwt_schedule_end_gmt', $gmt_end );
+	update_post_meta( $rule_id, 'nera_iwt_schedule_end_local', $local_raw_end );
+
+	$pct = max( 0, min( 100, intval( $row['nera_ticket_pct'] ?? 0 ) ) );
+	update_post_meta( $rule_id, 'nera_iwt_ticket_pct', $pct );
+
+	nera_iwt_push_rule_visibility_to_child_logs( $rule_id );
+	nera_iwt_maybe_clear_theme_instant_wins_cache_for_rule( $rule_id );
+}
+
+/**
+ * Mirror visibility meta from a rule post onto every child instant-winner log.
+ *
+ * Visibility decisions on the front read **rule** meta, so this sync is now optional —
+ * we keep it for backward compatibility and for any LFW path that reads log meta directly.
+ *
+ * @param int $rule_id Rule post ID (`lty_instant_winners`).
+ */
+function nera_iwt_push_rule_visibility_to_child_logs( $rule_id ) {
+	$rule_id = absint( $rule_id );
+	if ( $rule_id <= 0 ) {
+		return;
+	}
+
+	$log_pt = class_exists( 'LTY_Register_Post_Types', false )
+		? LTY_Register_Post_Types::LOTTERY_INSTANT_WINNER_LOG_POSTTYPE
+		: 'lty_ins_winner_log';
+
+	$statuses = function_exists( 'lty_get_instant_winner_log_statuses' )
+		? lty_get_instant_winner_log_statuses()
+		: array( 'lty_available', 'lty_pending', 'lty_won' );
+
+	$logs = get_posts(
+		array(
+			'post_type'      => $log_pt,
+			'post_status'    => $statuses,
+			'posts_per_page' => -1,
+			'fields'         => 'ids',
+			'post_parent'    => $rule_id,
+			'orderby'        => 'ID',
+			'order'          => 'ASC',
+		)
+	);
+
+	if ( ! is_array( $logs ) || empty( $logs ) ) {
+		return;
+	}
+
+	$keys = array(
+		'nera_iwt_public_rule_type',
+		'nera_iwt_schedule_at_gmt',
+		'nera_iwt_schedule_at_local',
+		'nera_iwt_schedule_end_gmt',
+		'nera_iwt_schedule_end_local',
+		'nera_iwt_ticket_pct',
+	);
+	foreach ( $logs as $log_id ) {
+		$log_id = absint( $log_id );
+		if ( $log_id <= 0 ) {
+			continue;
+		}
+		foreach ( $keys as $meta_key ) {
+			$v = get_post_meta( $rule_id, $meta_key, true );
+			update_post_meta( $log_id, $meta_key, $v );
+		}
+	}
+}
+
+/**
+ * Instant-winner rule post ID for a log (LFW stores rule id as `post_parent`).
+ *
+ * @param int $log_id Log post ID.
+ * @return int Rule ID or 0.
+ */
+function nera_iwt_get_instant_winner_rule_id_for_log( $log_id ) {
+	$pid = wp_get_post_parent_id( $log_id );
+	return $pid > 0 ? (int) $pid : 0;
+}
+
+/**
+ * Backward-compat helper: read meta from log first, fall back to parent rule.
+ *
+ * Storefront visibility no longer relies on this (see {@see nera_iwt_resolve_rule_visibility_for_log()})
+ * but third parties / templates may still call it.
+ *
+ * @param int    $log_id   Log post ID.
+ * @param string $meta_key Meta key.
+ * @return mixed
+ */
+function nera_iwt_get_post_meta_log_then_rule( $log_id, $meta_key ) {
+	$log_id = absint( $log_id );
+	if ( $log_id <= 0 || '' === (string) $meta_key ) {
+		return '';
+	}
+
+	$v_log = get_post_meta( $log_id, $meta_key, true );
+	$has   = false;
+	if ( is_string( $v_log ) ) {
+		$has = '' !== trim( $v_log );
+	} elseif ( false !== $v_log && null !== $v_log && '' !== $v_log ) {
+		$has = true;
+	}
+
+	if ( $has ) {
+		return $v_log;
+	}
+
+	$rule_id = nera_iwt_get_instant_winner_rule_id_for_log( $log_id );
+	if ( $rule_id <= 0 ) {
+		return '';
+	}
+
+	return get_post_meta( $rule_id, $meta_key, true );
+}
+
+/**
+ * Ensure Add Rule AJAX always carries visibility keys so meta can be saved.
+ *
+ * @param array $rule Row from wc_clean( $_POST['instant_winner_rule'] ).
+ * @return array
+ */
+function nera_iwt_normalize_add_rule_visibility_payload( array $rule ) {
+	if ( ! array_key_exists( 'nera_public_rule_type', $rule ) ) {
+		$rule['nera_public_rule_type'] = NERA_IWT_RULE_TYPE_INSTANT;
+	}
+	if ( ! array_key_exists( 'nera_schedule_at', $rule ) ) {
+		$rule['nera_schedule_at'] = '';
+	}
+	if ( ! array_key_exists( 'nera_schedule_end', $rule ) ) {
+		$rule['nera_schedule_end'] = '';
+	}
+	if ( ! array_key_exists( 'nera_ticket_pct', $rule ) ) {
+		$rule['nera_ticket_pct'] = '0';
+	}
+	return $rule;
+}
+
+/**
+ * Overlay Nera visibility keys from raw (unslashed) POST row onto a cleaned rule row.
+ *
+ * @param array $rule    Row after wc_clean().
+ * @param mixed $raw_row Same logical row from wp_unslash( $_POST[...] ).
+ * @return array
+ */
+function nera_iwt_merge_raw_rule_row_nera_keys( array $rule, $raw_row ) {
+	if ( ! is_array( $raw_row ) ) {
+		return $rule;
+	}
+	if ( array_key_exists( 'nera_public_rule_type', $raw_row ) ) {
+		$rule['nera_public_rule_type'] = sanitize_key( (string) $raw_row['nera_public_rule_type'] );
+	}
+	if ( array_key_exists( 'nera_schedule_at', $raw_row ) ) {
+		$rule['nera_schedule_at'] = sanitize_text_field( (string) $raw_row['nera_schedule_at'] );
+	}
+	if ( array_key_exists( 'nera_schedule_end', $raw_row ) ) {
+		$rule['nera_schedule_end'] = sanitize_text_field( (string) $raw_row['nera_schedule_end'] );
+	}
+	if ( array_key_exists( 'nera_ticket_pct', $raw_row ) ) {
+		$rule['nera_ticket_pct'] = sanitize_text_field( (string) $raw_row['nera_ticket_pct'] );
+	}
+	return $rule;
+}
+
+/**
+ * Persist visibility meta when LFW inserts a brand-new instant-winner rule via AJAX.
+ *
+ * @param int     $post_id Post ID.
+ * @param WP_Post $post    Post object.
+ * @param bool    $update  Whether this is an update.
+ */
+function nera_iwt_persist_visibility_wp_insert_new_rule( $post_id, $post, $update ) {
+	if ( $update || ! $post instanceof WP_Post ) {
+		return;
+	}
+
+	$rule_pt = class_exists( 'LTY_Register_Post_Types', false )
+		? LTY_Register_Post_Types::LOTTERY_INSTANT_WINNER_RULE_POSTTYPE
+		: 'lty_instant_winners';
+
+	if ( $rule_pt !== $post->post_type ) {
+		return;
+	}
+
+	if ( ! wp_doing_ajax() ) {
+		return;
+	}
+
+	// phpcs:disable WordPress.Security.NonceVerification.Missing
+	if ( ! isset( $_POST['action'] ) || 'lty_add_instant_winner_rule' !== sanitize_key( wp_unslash( $_POST['action'] ) ) ) {
+		return;
+	}
+
+	$rule = isset( $_POST['instant_winner_rule'] ) ? wc_clean( wp_unslash( $_POST['instant_winner_rule'] ) ) : array();
+	if ( ! is_array( $rule ) ) {
+		$rule = array();
+	}
+	$raw_rule = isset( $_POST['instant_winner_rule'] ) ? wp_unslash( $_POST['instant_winner_rule'] ) : array();
+	$rule     = nera_iwt_merge_raw_rule_row_nera_keys( $rule, is_array( $raw_rule ) ? $raw_rule : array() );
+	$rule     = nera_iwt_normalize_add_rule_visibility_payload( $rule );
+	nera_iwt_persist_rule_visibility_meta( $post_id, $rule );
+	// phpcs:enable WordPress.Security.NonceVerification.Missing
+}
+
+add_action( 'wp_insert_post', 'nera_iwt_persist_visibility_wp_insert_new_rule', 30, 3 );
+
+/**
+ * Public rule type for an instant-winner log (canonical value lives on the parent rule).
+ *
+ * @param int $log_id Log post ID.
+ * @return string One of nera_iwt_public_rule_type_slugs().
+ */
+function nera_iwt_get_log_public_rule_type( $log_id ) {
+	$vis = function_exists( 'nera_iwt_resolve_rule_visibility_for_log' )
+		? nera_iwt_resolve_rule_visibility_for_log( $log_id )
+		: null;
+	if ( is_array( $vis ) && isset( $vis['type'] ) ) {
+		return (string) $vis['type'];
+	}
+	// Fallback: direct meta (e.g. visibility module not loaded yet).
+	$type = (string) get_post_meta( $log_id, 'nera_iwt_public_rule_type', true );
+	if ( '' === $type || ! in_array( $type, nera_iwt_public_rule_type_slugs(), true ) ) {
+		return NERA_IWT_RULE_TYPE_INSTANT;
+	}
+	return $type;
+}
+
+/**
+ * Sold tickets as a percentage of maximum tickets for the lottery product.
+ *
+ * @param WC_Product $product Product.
+ * @return float|null Percent 0–100, or null if maximum is unknown/zero.
+ */
+function nera_iwt_get_lottery_ticket_sold_percent( $product ) {
+	if ( ! $product instanceof WC_Product ) {
+		return null;
+	}
+	$max = 0;
+	if ( method_exists( $product, 'get_lty_maximum_tickets' ) ) {
+		$max = intval( $product->get_lty_maximum_tickets() );
+	}
+	$max = absint( apply_filters( 'lty_progress_bar_maximum_tickets', $max, $product ) );
+	if ( $max <= 0 ) {
+		return null;
+	}
+	$purchased = 0;
+	if ( method_exists( $product, 'get_purchased_ticket_count' ) ) {
+		$purchased = absint( $product->get_purchased_ticket_count() );
+	}
+	return ( $purchased / $max ) * 100.0;
+}
+
+/**
+ * Counts for the public instant-wins section header (single source for badge + Vue stats).
+ *
+ * Uses {@see nera_iwt_get_rest_instant_winner_log_ids()} — the same pool as the REST payload —
+ * so the PHP-rendered toggle always starts from the correct max count.
+ * Schedule prizes are included here (skip_schedule=true) because the client-side JS
+ * (`instant-wins-client-schedule.js`) is the authoritative filter for future schedules and
+ * will only ever reduce the count, never increase it.  Ticket-% prizes are still excluded
+ * server-side inside that getter.
+ *
+ * @param WC_Product $product Lottery product.
+ * @return array{available:int,won:int,total:int}
+ */
+function nera_iwt_get_public_instant_wins_section_counts( $product ) {
+	$empty = array(
+		'available' => 0,
+		'won'       => 0,
+		'total'     => 0,
+	);
+	if ( ! $product instanceof WC_Product || ! function_exists( 'lty_get_instant_winner_log_ids' ) ) {
+		return $empty;
+	}
+
+	$ids = nera_iwt_get_rest_instant_winner_log_ids( $product->get_id() );
+	if ( empty( $ids ) ) {
+		return $empty;
+	}
+
+	$won       = 0;
+	$available = 0;
+
+	foreach ( $ids as $log_id ) {
+		$log_id = absint( $log_id );
+		if ( $log_id <= 0 ) {
+			continue;
+		}
+		$log = function_exists( 'lty_get_instant_winner_log' ) ? lty_get_instant_winner_log( $log_id ) : null;
+		if ( ! is_object( $log ) || ! method_exists( $log, 'has_status' ) ) {
+			continue;
+		}
+		if ( $log->has_status( 'lty_won' ) ) {
+			++$won;
+			continue;
+		}
+		++$available;
+	}
+
+	return array(
+		'available' => $available,
+		'won'       => $won,
+		'total'     => $available + $won,
+	);
+}
+
+/**
+ * Instant-winner log IDs for a lottery product after Nera storefront visibility rules.
+ *
+ * Always filters by the product's current relist count (matches LFW product object behaviour),
+ * then runs each ID through {@see nera_iwt_instant_winner_log_included_in_storefront_list()}.
+ *
+ * @param int $product_id Lottery product ID.
+ * @return int[]
+ */
+function nera_iwt_get_storefront_instant_winner_log_ids( $product_id ) {
+	$product_id = absint( $product_id );
+	if ( $product_id <= 0 || ! function_exists( 'lty_get_instant_winner_log_ids' ) ) {
+		return array();
+	}
+	$product = wc_get_product( $product_id );
+	if ( ! $product || ! $product->exists() ) {
+		return array();
+	}
+
+	$list_count = method_exists( $product, 'get_current_relist_count' )
+		? (int) $product->get_current_relist_count()
+		: 0;
+
+	$ids = lty_get_instant_winner_log_ids( $product_id, false, $list_count, 'all' );
+	if ( ! is_array( $ids ) || empty( $ids ) ) {
+		return array();
+	}
+
+	$out = array();
+	foreach ( $ids as $id ) {
+		$log_id = absint( $id );
+		if ( $log_id <= 0 ) {
+			continue;
+		}
+		if ( nera_iwt_instant_winner_log_included_in_storefront_list( $log_id, $product ) ) {
+			$out[] = $log_id;
+		}
+	}
+	return $out;
+}
+
+/**
+ * Extract lottery product ID from a meta_query built like lty_get_instant_winner_log_ids().
+ *
+ * @param array $meta_query WP_Query meta_query array.
+ * @return int 0 if not found.
+ */
+function nera_iwt_extract_lottery_id_from_meta_query( $meta_query ) {
+	if ( ! is_array( $meta_query ) ) {
+		return 0;
+	}
+	foreach ( $meta_query as $key => $clause ) {
+		if ( 'relation' === $key ) {
+			continue;
+		}
+		if ( ! is_array( $clause ) ) {
+			continue;
+		}
+		if ( isset( $clause['key'], $clause['value'] ) && 'lty_lottery_id' === $clause['key'] ) {
+			return absint( $clause['value'] );
+		}
+		$nested = nera_iwt_extract_lottery_id_from_meta_query( $clause );
+		if ( $nested > 0 ) {
+			return $nested;
+		}
+	}
+	return 0;
+}
+
+/**
+ * Whether this WP_Query matches LFW's instant-winner log listing (get_posts with fields=ids).
+ *
+ * @param WP_Query $query Query object.
+ * @return bool
+ */
+function nera_iwt_is_lfw_instant_winner_log_ids_query( $query ) {
+	if ( ! $query instanceof WP_Query ) {
+		return false;
+	}
+
+	$log_pt = class_exists( 'LTY_Register_Post_Types', false )
+		? LTY_Register_Post_Types::LOTTERY_INSTANT_WINNER_LOG_POSTTYPE
+		: 'lty_ins_winner_log';
+
+	if ( $query->get( 'post_type' ) !== $log_pt ) {
+		return false;
+	}
+
+	if ( 'ids' !== $query->get( 'fields' ) ) {
+		return false;
+	}
+
+	$mq = $query->get( 'meta_query' );
+	if ( ! is_array( $mq ) || empty( $mq ) ) {
+		return false;
+	}
+
+	return nera_iwt_extract_lottery_id_from_meta_query( $mq ) > 0;
+}
+
+/**
+ * Filter get_posts() results for instant-winner logs on the storefront (no LFW core edits).
+ *
+ * @param array<int|WP_Post> $posts Array of post IDs or post objects.
+ * @param WP_Query           $query Query instance.
+ * @return array<int|WP_Post>
+ */
+function nera_iwt_posts_results_instant_winner_visibility( $posts, $query ) {
+	if ( is_admin() ) {
+		return $posts;
+	}
+
+	if ( ! nera_iwt_is_lfw_instant_winner_log_ids_query( $query ) ) {
+		return $posts;
+	}
+
+	$lottery_id = nera_iwt_extract_lottery_id_from_meta_query( $query->get( 'meta_query' ) );
+	if ( $lottery_id <= 0 ) {
+		return $posts;
+	}
+
+	$product = wc_get_product( $lottery_id );
+	if ( ! $product || ! $product->exists() ) {
+		return $posts;
+	}
+
+	$out = array();
+	foreach ( (array) $posts as $item ) {
+		$log_id = is_object( $item ) ? (int) $item->ID : (int) $item;
+		if ( $log_id <= 0 ) {
+			continue;
+		}
+		if ( ! nera_iwt_instant_winner_log_included_in_storefront_list( $log_id, $product ) ) {
+			continue;
+		}
+		$out[] = $item;
+	}
+
+	return $out;
+}
+
+add_filter( 'posts_results', 'nera_iwt_posts_results_instant_winner_visibility', 10, 2 );
+
+/**
+ * Save visibility meta when LFW creates/updates a rule via AJAX.
+ *
+ * @param int     $post_id Post ID.
+ * @param WP_Post $post    Post.
+ * @param bool    $update  Whether this is an update.
+ */
+function nera_iwt_save_rule_visibility_on_rule_save( $post_id, $post, $update ) {
+	unset( $post, $update );
+
+	if ( ! wp_doing_ajax() ) {
+		return;
+	}
+
+	// phpcs:disable WordPress.Security.NonceVerification.Missing
+	$action = isset( $_POST['action'] ) ? sanitize_key( wp_unslash( $_POST['action'] ) ) : '';
+
+	if ( 'lty_add_instant_winner_rule' === $action ) {
+		$rule = isset( $_POST['instant_winner_rule'] ) ? wc_clean( wp_unslash( $_POST['instant_winner_rule'] ) ) : array();
+		if ( ! is_array( $rule ) ) {
+			$rule = array();
+		}
+		$raw_rule = isset( $_POST['instant_winner_rule'] ) ? wp_unslash( $_POST['instant_winner_rule'] ) : array();
+		$rule     = nera_iwt_merge_raw_rule_row_nera_keys( $rule, is_array( $raw_rule ) ? $raw_rule : array() );
+		$rule     = nera_iwt_normalize_add_rule_visibility_payload( $rule );
+		nera_iwt_persist_rule_visibility_meta( $post_id, $rule );
+	} elseif ( 'lty_save_instant_winners_rules' === $action ) {
+		$rules = isset( $_POST['instant_winners_rules'] ) ? wc_clean( wp_unslash( $_POST['instant_winners_rules'] ) ) : array();
+		if ( isset( $rules[ $post_id ] ) && is_array( $rules[ $post_id ] ) ) {
+			$row     = $rules[ $post_id ];
+			$raw     = isset( $_POST['instant_winners_rules'] ) ? wp_unslash( $_POST['instant_winners_rules'] ) : array();
+			$raw_row = array();
+			if ( is_array( $raw ) ) {
+				if ( isset( $raw[ $post_id ] ) && is_array( $raw[ $post_id ] ) ) {
+					$raw_row = $raw[ $post_id ];
+				} elseif ( isset( $raw[ (string) $post_id ] ) && is_array( $raw[ (string) $post_id ] ) ) {
+					$raw_row = $raw[ (string) $post_id ];
+				}
+			}
+			$row = nera_iwt_merge_raw_rule_row_nera_keys( $row, $raw_row );
+			nera_iwt_persist_rule_visibility_meta( $post_id, $row );
+		}
+	}
+	// phpcs:enable WordPress.Security.NonceVerification.Missing
+}
+
+add_action( 'save_post_lty_instant_winners', 'nera_iwt_save_rule_visibility_on_rule_save', 15, 3 );
+
+/**
+ * Mirror visibility meta from parent rule onto each log on log save (legacy compat).
+ *
+ * @param int     $post_id Log ID.
+ * @param WP_Post $post    Log post.
+ */
+function nera_iwt_sync_visibility_meta_to_log( $post_id, $post ) {
+	$rule_id = isset( $post->post_parent ) ? intval( $post->post_parent ) : 0;
+	if ( ! $rule_id ) {
+		return;
+	}
+
+	foreach ( array( 'nera_iwt_public_rule_type', 'nera_iwt_schedule_at_gmt', 'nera_iwt_schedule_at_local', 'nera_iwt_schedule_end_gmt', 'nera_iwt_schedule_end_local', 'nera_iwt_ticket_pct' ) as $meta_key ) {
+		$v = get_post_meta( $rule_id, $meta_key, true );
+		update_post_meta( $post_id, $meta_key, $v );
+	}
+
+	$lottery_id = get_post_meta( $post_id, 'lty_lottery_id', true );
+	nera_iwt_maybe_clear_theme_instant_wins_cache( absint( $lottery_id ) );
+}
+
+add_action( 'save_post_lty_ins_winner_log', 'nera_iwt_sync_visibility_meta_to_log', 15, 2 );
+
+/**
+ * Admin: table header — Rule type.
+ */
+function nera_iwt_admin_rule_column_header() {
+	?>
+	<th class="nera-iwt-public-rule-type-column">
+		<b><?php esc_html_e( 'Rule type', 'nera-instant-win-threshold' ); ?></b>
+		<?php
+		echo wp_kses_post(
+			wc_help_tip(
+				__( 'Controls when this prize appears on the public product page. Instant = always. Schedule = after a date/time. Ticket % = when sold tickets reach the configured percentage.', 'nera-instant-win-threshold' )
+			)
+		);
+		?>
+	</th>
+	<?php
+}
+
+add_action( 'lty_instant_winner_rule_column', 'nera_iwt_admin_rule_column_header', 5 );
+
+/**
+ * Admin: editable table cell (Rule type, Schedule at / end, Ticket sold %) — same behaviour as Add Rule modal.
+ *
+ * @param LTY_Instant_Winner_Rule $instant_winner Rule object.
+ */
+function nera_iwt_admin_rule_column_cell( $instant_winner ) {
+	if ( ! is_object( $instant_winner ) || ! method_exists( $instant_winner, 'get_id' ) ) {
+		return;
+	}
+
+	$rule_id     = (int) $instant_winner->get_id();
+	$type        = get_post_meta( $rule_id, 'nera_iwt_public_rule_type', true );
+	$type        = in_array( (string) $type, nera_iwt_public_rule_type_slugs(), true ) ? (string) $type : NERA_IWT_RULE_TYPE_INSTANT;
+	$sched_gmt     = (string) get_post_meta( $rule_id, 'nera_iwt_schedule_at_gmt', true );
+	$sched_end_gmt = (string) get_post_meta( $rule_id, 'nera_iwt_schedule_end_gmt', true );
+	$pct           = max( 0, min( 100, intval( get_post_meta( $rule_id, 'nera_iwt_ticket_pct', true ) ) ) );
+	$sched_local   = nera_iwt_schedule_gmt_to_local_input( $sched_gmt );
+	$sched_end_local = nera_iwt_schedule_gmt_to_local_input( $sched_end_gmt );
+
+	$labels = nera_iwt_public_rule_type_labels();
+	?>
+	<td class="nera-iwt-public-rule-type-column">
+		<div class="nera-iwt-rule-visibility-fields nera-iwt-rule-visibility-table-fields">
+			<p class="nera-iwt-table-field-row">
+				<label class="screen-reader-text" for="nera-iwt-public-rule-type-<?php echo esc_attr( (string) $rule_id ); ?>">
+					<?php esc_html_e( 'Rule type', 'nera-instant-win-threshold' ); ?>
+				</label>
+				<select
+					id="nera-iwt-public-rule-type-<?php echo esc_attr( (string) $rule_id ); ?>"
+					class="nera-iwt-public-rule-type"
+				>
+					<?php foreach ( $labels as $slug => $label ) : ?>
+						<option value="<?php echo esc_attr( $slug ); ?>" <?php selected( $slug, $type, true ); ?>><?php echo esc_html( $label ); ?></option>
+					<?php endforeach; ?>
+				</select>
+			</p>
+			<p class="nera-iwt-row-schedule nera-iwt-popup-conditional-row nera-iwt-table-field-row">
+				<label class="screen-reader-text" for="nera-iwt-schedule-at-<?php echo esc_attr( (string) $rule_id ); ?>">
+					<?php esc_html_e( 'Schedule at', 'nera-instant-win-threshold' ); ?>
+				</label>
+				<input
+					type="datetime-local"
+					id="nera-iwt-schedule-at-<?php echo esc_attr( (string) $rule_id ); ?>"
+					class="nera-iwt-schedule-at"
+					value="<?php echo esc_attr( $sched_local ); ?>"
+					step="60"
+				/>
+			</p>
+			<p class="nera-iwt-row-schedule nera-iwt-popup-conditional-row nera-iwt-table-field-row">
+				<label class="screen-reader-text" for="nera-iwt-schedule-end-<?php echo esc_attr( (string) $rule_id ); ?>">
+					<?php esc_html_e( 'Schedule End', 'nera-instant-win-threshold' ); ?>
+				</label>
+				<span class="nera-iwt-schedule-end-field">
+					<input
+						type="datetime-local"
+						id="nera-iwt-schedule-end-<?php echo esc_attr( (string) $rule_id ); ?>"
+						class="nera-iwt-schedule-end"
+						value="<?php echo esc_attr( $sched_end_local ); ?>"
+						step="60"
+					/>
+					<button
+						type="button"
+						class="button button-small nera-iwt-schedule-end-clear"
+						aria-label="<?php echo esc_attr__( 'Clear schedule end', 'nera-instant-win-threshold' ); ?>"
+					>&times;</button>
+				</span>
+			</p>
+			<p class="nera-iwt-row-ticket-pct nera-iwt-popup-conditional-row nera-iwt-table-field-row">
+				<label class="screen-reader-text" for="nera-iwt-ticket-pct-<?php echo esc_attr( (string) $rule_id ); ?>">
+					<?php esc_html_e( 'Ticket sold (%)', 'nera-instant-win-threshold' ); ?>
+				</label>
+				<input
+					type="number"
+					id="nera-iwt-ticket-pct-<?php echo esc_attr( (string) $rule_id ); ?>"
+					class="nera-iwt-ticket-pct"
+					min="0"
+					max="100"
+					step="1"
+					inputmode="numeric"
+					value="<?php echo esc_attr( (string) $pct ); ?>"
+				/>
+			</p>
+		</div>
+	</td>
+	<?php
+}
+
+add_action( 'lty_instant_winner_rule_column_data', 'nera_iwt_admin_rule_column_cell', 5, 2 );
+
+/**
+ * Admin: “Add rule” popup fields (moved to top of modal via JS).
+ */
+function nera_iwt_admin_popup_fields() {
+	$labels = nera_iwt_public_rule_type_labels();
+	?>
+	<div class="nera-iwt-rule-visibility-popup-fields nera-iwt-rule-visibility-fields lty-instant-winner-rule-column">
+		<p class="lty-lottery-ticket-number lty-instant-winner-rule-column">
+			<label><b><?php esc_html_e( 'Rule type', 'nera-instant-win-threshold' ); ?></b></label>
+			<select class="nera-iwt-public-rule-type">
+				<?php foreach ( $labels as $slug => $label ) : ?>
+					<option value="<?php echo esc_attr( $slug ); ?>"><?php echo esc_html( $label ); ?></option>
+				<?php endforeach; ?>
+			</select>
+		</p>
+		<?php /* Do not add lty-instant-winner-rule-column here: LFW calls .show() on that class in the modal and would force these rows visible. */ ?>
+		<p class="nera-iwt-row-schedule nera-iwt-popup-conditional-row">
+			<label><b><?php esc_html_e( 'Schedule at', 'nera-instant-win-threshold' ); ?></b></label>
+			<input type="datetime-local" class="nera-iwt-schedule-at" value="" step="60" />
+		</p>
+		<p class="nera-iwt-row-schedule nera-iwt-popup-conditional-row">
+			<label><b><?php esc_html_e( 'Schedule End', 'nera-instant-win-threshold' ); ?></b></label>
+			<span class="nera-iwt-schedule-end-field">
+				<input type="datetime-local" class="nera-iwt-schedule-end" value="" step="60" />
+				<button
+					type="button"
+					class="button button-small nera-iwt-schedule-end-clear"
+					aria-label="<?php echo esc_attr__( 'Clear schedule end', 'nera-instant-win-threshold' ); ?>"
+				>&times;</button>
+			</span>
+		</p>
+		<p class="nera-iwt-row-ticket-pct nera-iwt-popup-conditional-row">
+			<label><b><?php esc_html_e( 'Ticket sold (%)', 'nera-instant-win-threshold' ); ?></b></label>
+			<input type="number" min="0" max="100" step="1" inputmode="numeric" class="nera-iwt-ticket-pct" value="0" />
+		</p>
+	</div>
+	<?php
+}
+
+add_action( 'lty_instant_winner_rule_popup_column_data', 'nera_iwt_admin_popup_fields', 1 );
+
+/**
+ * Enqueue admin script for modal + table behaviour and AJAX payload.
+ *
+ * @param string $hook_suffix Current admin page.
+ */
+function nera_iwt_admin_enqueue_rule_visibility( $hook_suffix ) {
+	if ( 'post.php' !== $hook_suffix && 'post-new.php' !== $hook_suffix ) {
+		return;
+	}
+
+	global $post;
+	if ( ! $post || 'product' !== $post->post_type ) {
+		return;
+	}
+
+	$js  = NERA_IWT_PLUGIN_DIR . 'assets/admin-rule-visibility.js';
+	$css = NERA_IWT_PLUGIN_DIR . 'assets/admin-rule-visibility.css';
+	if ( ! is_readable( $js ) ) {
+		return;
+	}
+
+	wp_enqueue_style(
+		'nera-iwt-admin-rule-visibility',
+		plugins_url( 'assets/admin-rule-visibility.css', NERA_IWT_PLUGIN_FILE ),
+		array( 'lty-admin' ),
+		is_readable( $css ) ? (string) filemtime( $css ) : '1.0.0'
+	);
+
+	$js_deps = array( 'jquery' );
+	if ( wp_script_is( 'wc-admin-product-meta-boxes', 'registered' ) ) {
+		$js_deps[] = 'wc-admin-product-meta-boxes';
+	}
+
+	wp_enqueue_script(
+		'nera-iwt-admin-rule-visibility',
+		plugins_url( 'assets/admin-rule-visibility.js', NERA_IWT_PLUGIN_FILE ),
+		$js_deps,
+		(string) filemtime( $js ),
+		true
+	);
+}
+
+add_action( 'admin_enqueue_scripts', 'nera_iwt_admin_enqueue_rule_visibility', 99 );
+
+// ---------------------------------------------------------------------------
+// REST-specific log-ID fetcher — schedule prizes included (client filters them).
+// ---------------------------------------------------------------------------
+
+/**
+ * Return storefront log IDs for the REST API response.
+ *
+ * Unlike nera_iwt_get_storefront_instant_winner_log_ids(), schedule-pending
+ * prizes are NOT removed here.  Instead they are included in the REST payload
+ * along with their schedule_at string so client-side JavaScript can compare
+ * against the visitor's browser local time.
+ *
+ * Ticket-sold-percentage prizes that have NOT met their threshold are still
+ * excluded server-side (the server is the only party that knows the sold count).
+ *
+ * @param int $product_id WooCommerce product ID.
+ * @return int[]
+ */
+function nera_iwt_get_rest_instant_winner_log_ids( $product_id ) {
+	$product_id = absint( $product_id );
+	if ( $product_id <= 0 || ! function_exists( 'lty_get_instant_winner_log_ids' ) ) {
+		return array();
+	}
+	$product = wc_get_product( $product_id );
+	if ( ! $product || ! $product->exists() ) {
+		return array();
+	}
+
+	$list_count = method_exists( $product, 'get_current_relist_count' )
+		? (int) $product->get_current_relist_count()
+		: 0;
+
+	$ids = lty_get_instant_winner_log_ids( $product_id, false, $list_count, 'all' );
+	if ( ! is_array( $ids ) || empty( $ids ) ) {
+		return array();
+	}
+
+	$out = array();
+	foreach ( $ids as $id ) {
+		$log_id = absint( $id );
+		if ( $log_id <= 0 ) {
+			continue;
+		}
+		// Won prizes always show.
+		if ( 'lty_won' === get_post_status( $log_id ) ) {
+			$out[] = $log_id;
+			continue;
+		}
+		// Use skip_schedule=true so schedule prizes pass this check.
+		// Ticket-% prizes that haven't met their threshold are still excluded.
+		if ( nera_iwt_available_log_visible_on_storefront( $log_id, $product, array( 'skip_schedule' => true ) ) ) {
+			$out[] = $log_id;
+		}
+	}
+	return $out;
+}
