@@ -1,0 +1,23 @@
+{
+	"name": "Nera – Instant Win Rules",
+	"slug": "nera-instant-win-threshold",
+	"version": "1.0.7",
+	"homepage": "https://github.com/Nera-Marketing/nera-instant-win-threshold",
+	"download_url": "https://github.com/Nera-Marketing/nera-instant-win-threshold/releases/download/v1.0.7/nera-instant-win-threshold-1.0.7.zip",
+
+	"author": "Nera",
+	"author_homepage": "https://github.com/Nera-Marketing",
+
+	"requires": "6.0",
+	"tested": "6.8",
+	"requires_php": "7.4",
+	"last_updated": "2026-05-04 10:16:53",
+
+	"upgrade_notice": "Update to the latest release for bug fixes and compatibility with Lottery for WooCommerce.",
+
+	"sections": {
+		"description": "<p>Instant win rule types (instant, scheduled, ticket sold %), public prize visibility, and optional instant-win UI overrides for <strong>Lottery for WooCommerce</strong>.</p><p>Requires the Lottery for WooCommerce plugin to be installed and active.</p>",
+		"installation": "<p>Install and activate <strong>Lottery for WooCommerce</strong>, then install this plugin and activate it.</p><p>Configure instant win rules and visibility from the product editor as provided by your theme and Lottery for WooCommerce.</p>",
+		"changelog": "<p>Release notes: <a href=\"https://github.com/Nera-Marketing/nera-instant-win-threshold/releases\">GitHub releases</a>.</p>"
+	}
+}
