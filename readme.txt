@@ -4,7 +4,7 @@ Tags: woocommerce, lottery, instant win, competition, giveaway
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.0.11
+Stable tag: 1.0.12
 License: GPLv2 or later
 
 Instant win rule types, public prize visibility, and optional instant-win UI overrides for Lottery for WooCommerce.
@@ -26,6 +26,10 @@ This plugin extends **Lottery for WooCommerce** (Giveaway for WooCommerce) with:
 3. Configure instant win rules and visibility on competition products as supported by your theme and Lottery for WooCommerce.
 
 == Changelog ==
+
+= 1.0.12 =
+* Admin — Instant Win rules: Add Rule modal fields aligned with Lottery for WooCommerce (same `<p>` layout and 50% widths as Ticket / Prize rows; `datetime-local` + ticket % covered where LFW omits them).
+* Admin — product rules table: Rule type column sizing; `select.nera-iwt-public-rule-type` uses full cell width (`100% !important`) so it matches Schedule at / Schedule end / Ticket sold (%) beside Lottery’s global `130px` select rule.
 
 = 1.0.11 =
 * WordPress 6.3+ updates: pre-create `upgrade-temp-backup` plugin/theme dirs; optional skip of Core’s temp-backup move via `NERA_SKIP_UPGRADE_TEMP_BACKUP`, `WP_ENVIRONMENT_TYPE=local`, or `nera_skip_upgrade_temp_backup` (helps Windows/Laragon when updates fail with “Could not move the old version to the upgrade-temp-backup directory”).

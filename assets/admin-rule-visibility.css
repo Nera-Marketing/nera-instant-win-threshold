@@ -13,8 +13,8 @@
 	display: none !important;
 }
 
-#lty_lottery_instant_winners_rule_modal .nera-iwt-rule-visibility-fields.nera-iwt--show-schedule .nera-iwt-row-schedule,
-#lty_lottery_instant_winners_rule_modal .nera-iwt-rule-visibility-fields.nera-iwt--show-ticket-pct .nera-iwt-row-ticket-pct {
+#lty_lottery_instant_winners_rule_modal .nera-iwt-rule-visibility-fields.nera-iwt--show-schedule .nera-iwt-row-schedule.nera-iwt-popup-field-row,
+#lty_lottery_instant_winners_rule_modal .nera-iwt-rule-visibility-fields.nera-iwt--show-ticket-pct .nera-iwt-row-ticket-pct.nera-iwt-popup-field-row {
 	display: block !important;
 }
 
@@ -24,8 +24,8 @@
 	display: none !important;
 }
 
-#lty_lottery_instant_winners_rule_modal.modal .nera-iwt-rule-visibility-fields.nera-iwt--show-schedule .nera-iwt-row-schedule,
-#lty_lottery_instant_winners_rule_modal.modal .nera-iwt-rule-visibility-fields.nera-iwt--show-ticket-pct .nera-iwt-row-ticket-pct {
+#lty_lottery_instant_winners_rule_modal.modal .nera-iwt-rule-visibility-fields.nera-iwt--show-schedule .nera-iwt-row-schedule.nera-iwt-popup-field-row,
+#lty_lottery_instant_winners_rule_modal.modal .nera-iwt-rule-visibility-fields.nera-iwt--show-ticket-pct .nera-iwt-row-ticket-pct.nera-iwt-popup-field-row {
 	display: block !important;
 }
 
@@ -70,6 +70,44 @@ body.post-type-product #lty_lottery_instant_winners_rule_modal.modal .lty-instan
 }
 
 /* ------------------------------------------------------------------------- */
+/* Add rule modal — same <p> shape as LFW (label + field siblings) so        */
+/* .lty-instant-winners-rule-content p label float + Lottery’s 50% widths    */
+/* apply to the same containing block. (50% inside a wrapper span was      */
+/* half of the post-float column = too narrow / misaligned.)                 */
+/* Lottery omits input[type=datetime-local] and modal .nera-iwt-ticket-pct — */
+/* we set 50% on those direct children of <p> to match select / text.         */
+/* Schedule end: .nera-iwt-schedule-end-field is one flex row at 50% = same  */
+/* outer width as other fields (input + × inside the band).                  */
+/* ------------------------------------------------------------------------- */
+
+body.post-type-product #lty_lottery_instant_winners_rule_modal .nera-iwt-rule-visibility-popup-fields > p.nera-iwt-popup-field-row {
+	display: block !important;
+	box-sizing: border-box;
+	width: 100%;
+	max-width: 100%;
+	clear: both;
+}
+
+body.post-type-product #lty_lottery_instant_winners_rule_modal .nera-iwt-rule-visibility-popup-fields > p.nera-iwt-popup-field-row::after {
+	content: "";
+	display: table;
+	clear: both;
+}
+
+body.post-type-product #lty_lottery_instant_winners_rule_modal .nera-iwt-rule-visibility-popup-fields > p.nera-iwt-popup-field-row > input.nera-iwt-schedule-at,
+body.post-type-product #lty_lottery_instant_winners_rule_modal .nera-iwt-rule-visibility-popup-fields > p.nera-iwt-popup-field-row > input.nera-iwt-ticket-pct {
+	width: 50% !important;
+	max-width: 100%;
+	box-sizing: border-box;
+}
+
+body.post-type-product #lty_lottery_instant_winners_rule_modal .nera-iwt-rule-visibility-popup-fields > p.nera-iwt-popup-field-row > .nera-iwt-schedule-end-field {
+	width: 50% !important;
+	max-width: 100%;
+	box-sizing: border-box;
+}
+
+/* ------------------------------------------------------------------------- */
 /* List table — Rule type column: same conditional rows as Add Rule modal    */
 /* ------------------------------------------------------------------------- */
 
@@ -90,10 +128,14 @@ body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibi
 	cursor: not-allowed;
 }
 
+body.post-type-product .lty-instant-winners-rules-contents th.nera-iwt-public-rule-type-column,
 body.post-type-product .lty-instant-winners-rules-contents td.nera-iwt-public-rule-type-column {
 	vertical-align: top;
-	min-width: 200px;
-	max-width: 280px;
+	/* Was 120px; +50% width for rule-type controls (select / schedule / ticket %). */
+	width: 180px;
+	min-width: 180px;
+	max-width: 180px;
+	box-sizing: border-box;
 }
 
 body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibility-table-fields .nera-iwt-table-field-row {
@@ -104,7 +146,17 @@ body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibi
 	margin-bottom: 0;
 }
 
-body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibility-table-fields select.nera-iwt-public-rule-type,
+/*
+ * Lottery for WooCommerce sets `.lty-instant-winners-rules-contents select { width: 130px !important }`,
+ * which caps Rule type while `.nera-iwt-schedule-at` / ticket % use full cell width below.
+ */
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibility-table-fields select.nera-iwt-public-rule-type {
+	width: 100% !important;
+	max-width: 100% !important;
+	min-width: 0;
+	box-sizing: border-box;
+}
+
 body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibility-table-fields .nera-iwt-schedule-at,
 body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibility-table-fields .nera-iwt-schedule-end,
 body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibility-table-fields .nera-iwt-ticket-pct {

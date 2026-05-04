@@ -763,8 +763,8 @@ function nera_iwt_admin_popup_fields() {
 	$labels = nera_iwt_public_rule_type_labels();
 	?>
 	<div class="nera-iwt-rule-visibility-popup-fields nera-iwt-rule-visibility-fields lty-instant-winner-rule-column">
-		<p class="lty-lottery-ticket-number lty-instant-winner-rule-column">
-			<label><b><?php esc_html_e( 'Rule type', 'nera-instant-win-threshold' ); ?></b></label>
+		<p class="nera-iwt-popup-field-row">
+			<label class="nera-iwt-popup-field-label"><b><?php esc_html_e( 'Rule type', 'nera-instant-win-threshold' ); ?></b></label>
 			<select class="nera-iwt-public-rule-type">
 				<?php foreach ( $labels as $slug => $label ) : ?>
 					<option value="<?php echo esc_attr( $slug ); ?>"><?php echo esc_html( $label ); ?></option>
@@ -772,12 +772,12 @@ function nera_iwt_admin_popup_fields() {
 			</select>
 		</p>
 		<?php /* Do not add lty-instant-winner-rule-column here: LFW calls .show() on that class in the modal and would force these rows visible. */ ?>
-		<p class="nera-iwt-row-schedule nera-iwt-popup-conditional-row">
-			<label><b><?php esc_html_e( 'Schedule at', 'nera-instant-win-threshold' ); ?></b></label>
+		<p class="nera-iwt-popup-field-row nera-iwt-row-schedule nera-iwt-popup-conditional-row">
+			<label class="nera-iwt-popup-field-label"><b><?php esc_html_e( 'Schedule at', 'nera-instant-win-threshold' ); ?></b></label>
 			<input type="datetime-local" class="nera-iwt-schedule-at" value="" step="60" />
 		</p>
-		<p class="nera-iwt-row-schedule nera-iwt-popup-conditional-row">
-			<label><b><?php esc_html_e( 'Schedule End', 'nera-instant-win-threshold' ); ?></b></label>
+		<p class="nera-iwt-popup-field-row nera-iwt-row-schedule nera-iwt-popup-conditional-row">
+			<label class="nera-iwt-popup-field-label"><b><?php esc_html_e( 'Schedule End', 'nera-instant-win-threshold' ); ?></b></label>
 			<span class="nera-iwt-schedule-end-field">
 				<input type="datetime-local" class="nera-iwt-schedule-end" value="" step="60" />
 				<button
@@ -787,8 +787,8 @@ function nera_iwt_admin_popup_fields() {
 				>&times;</button>
 			</span>
 		</p>
-		<p class="nera-iwt-row-ticket-pct nera-iwt-popup-conditional-row">
-			<label><b><?php esc_html_e( 'Ticket sold (%)', 'nera-instant-win-threshold' ); ?></b></label>
+		<p class="nera-iwt-popup-field-row nera-iwt-row-ticket-pct nera-iwt-popup-conditional-row">
+			<label class="nera-iwt-popup-field-label"><b><?php esc_html_e( 'Ticket sold (%)', 'nera-instant-win-threshold' ); ?></b></label>
 			<input type="number" min="0" max="100" step="1" inputmode="numeric" class="nera-iwt-ticket-pct" value="0" />
 		</p>
 	</div>
