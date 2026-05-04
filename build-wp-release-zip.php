@@ -18,11 +18,16 @@ if ( $argc < 3 ) {
 $src_arg = $argv[1];
 $out_zip = $argv[2];
 
-$src = realpath( $src_arg );
-if ( $src === false || ! is_dir( $src ) ) {
+$src_fs = realpath( $src_arg );
+if ( $src_fs === false || ! is_dir( $src_fs ) ) {
 	fwrite( STDERR, "Invalid source directory: {$src_arg}\n" );
 	exit( 1 );
 }
+
+// Normalise to forward slashes so prefix math matches Iterator paths on Windows.
+$src = str_replace( '\\', '/', $src_fs );
+$src = rtrim( $src, '/' );
+$src_prefix = $src . '/';
 
 $root = basename( $src );
 $zip  = new ZipArchive();
@@ -31,9 +36,8 @@ if ( true !== $zip->open( $out_zip, ZipArchive::CREATE | ZipArchive::OVERWRITE )
 	exit( 1 );
 }
 
-$src_len = strlen( $src );
-$it      = new RecursiveIteratorIterator(
-	new RecursiveDirectoryIterator( $src, FilesystemIterator::SKIP_DOTS ),
+$it = new RecursiveIteratorIterator(
+	new RecursiveDirectoryIterator( $src_fs, FilesystemIterator::SKIP_DOTS ),
 	RecursiveIteratorIterator::LEAVES_ONLY
 );
 
@@ -41,16 +45,18 @@ foreach ( $it as $file_info ) {
 	if ( ! $file_info->isFile() ) {
 		continue;
 	}
-	$full = $file_info->getRealPath();
-	if ( ! $full ) {
+	$full_raw = $file_info->getRealPath();
+	if ( ! $full_raw ) {
 		continue;
 	}
-	if ( strpos( $full, $src ) !== 0 ) {
+	$full = str_replace( '\\', '/', $full_raw );
+	if ( strpos( $full, $src_prefix ) !== 0 ) {
 		continue;
 	}
-	$rel = substr( $full, $src_len );
-	$rel = ltrim( str_replace( '\\', '/', $rel ), '/' );
-	$zip->addFile( $full, $root . '/' . $rel );
+	$rel = substr( $full, strlen( $src_prefix ) );
+	$rel = ltrim( $rel, '/' );
+	// Central-directory paths must use `/` (never `\\`) or WordPress may fail copying on update.
+	$zip->addFile( $full_raw, $root . '/' . $rel );
 }
 
 $zip->close();
