@@ -2,30 +2,36 @@
 /**
  * Plugin Name: Nera – Instant Win Rules
  * Description: Instant win rule types (instant, scheduled, ticket sold %), public prize visibility, and optional instant-win UI overrides for Lottery for WooCommerce.
- * Version: 1.0.0
+ * Version: 1.0.1
  * Requires Plugins: lottery-for-woocommerce
  */
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'NERA_IWT_VERSION', '1.0.0' );
+define( 'NERA_IWT_VERSION', '1.0.1' );
 define( 'NERA_IWT_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'NERA_IWT_PLUGIN_FILE', __FILE__ );
 
 /**
- * GitHub updates (Plugin Update Checker) — opt-in so sites do not call the API until the repo exists.
+ * GitHub updates (Plugin Update Checker). On by default when the lib is present.
  *
- * In wp-config.php, after `https://github.com/Nera-Marketing/nera-instant-win-threshold` exists (public
- * or authenticated) and has branch `main` plus at least one Release for zip updates:
+ * Disable only if the repo is missing or you are developing without GitHub:
+ *   define( 'NERA_IWT_DISABLE_GITHUB_UPDATES', true );
  *
- *   define( 'NERA_IWT_ENABLE_GITHUB_UPDATES', true );
- *
- * Private repo: `define( 'NERA_IWT_GITHUB_TOKEN', 'ghp_...' );` (contents read-only is enough).
+ * Private repo: `define( 'NERA_IWT_GITHUB_TOKEN', 'ghp_...' );`
  * Custom URL: `define( 'NERA_IWT_GITHUB_REPO_URL', 'https://github.com/Owner/repo/' );` or filter `nera_iwt_github_repo_url`.
+ *
+ * Plugin Update Checker uses the `Version` header inside this file on the GitHub tag/branch (not only
+ * the release tag name). If the tag says 1.0.1 but this header is still 1.0.0, WordPress reports "up to date".
+ * Bump `Version` and NERA_IWT_VERSION in this file for every release, then publish/tag to match.
+ *
+ * GitHub's `/releases/latest` returns 404 when there is no qualifying "latest" stable release. We set
+ * a release filter with maxReleases>1 so PUC uses the `/releases` list instead of `/latest`. For updates
+ * to appear, the release must not be a GitHub draft and should not be marked "pre-release" (unless you change this code).
  *
  * @link https://github.com/Nera-Marketing/nera-instant-win-threshold/
  */
-if ( defined( 'NERA_IWT_ENABLE_GITHUB_UPDATES' ) && NERA_IWT_ENABLE_GITHUB_UPDATES ) {
+if ( ! defined( 'NERA_IWT_DISABLE_GITHUB_UPDATES' ) || ! NERA_IWT_DISABLE_GITHUB_UPDATES ) {
 	$nera_iwt_github_repo_default = 'https://github.com/Nera-Marketing/nera-instant-win-threshold/';
 	if ( defined( 'NERA_IWT_GITHUB_REPO_URL' ) && is_string( NERA_IWT_GITHUB_REPO_URL ) && NERA_IWT_GITHUB_REPO_URL !== '' ) {
 		$nera_iwt_github_repo_default = NERA_IWT_GITHUB_REPO_URL;
@@ -44,7 +50,17 @@ if ( defined( 'NERA_IWT_ENABLE_GITHUB_UPDATES' ) && NERA_IWT_ENABLE_GITHUB_UPDAT
 		$nera_iwt_update_checker->setAuthentication( NERA_IWT_GITHUB_TOKEN );
 	}
 
-	$nera_iwt_update_checker->getVcsApi()->enableReleaseAssets();
+	$nera_iwt_puc_vcs = $nera_iwt_update_checker->getVcsApi();
+	// Avoid relying on GET /releases/latest (404 when GitHub has no "latest" stable release).
+	$nera_iwt_puc_vcs->setReleaseFilter(
+		static function ( $version_number, $release_object ) {
+			unset( $version_number, $release_object );
+			return true;
+		},
+		\YahnisElsts\PluginUpdateChecker\v5p5\Vcs\Api::RELEASE_FILTER_SKIP_PRERELEASE,
+		20
+	);
+	$nera_iwt_puc_vcs->enableReleaseAssets();
 }
 
 /** Lottery for WooCommerce main file (plugin slug / folder). */
