@@ -4,7 +4,7 @@ Tags: woocommerce, lottery, instant win, competition, giveaway
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.0.8
+Stable tag: 1.0.9
 License: GPLv2 or later
 
 Instant win rule types, public prize visibility, and optional instant-win UI overrides for Lottery for WooCommerce.
@@ -26,6 +26,9 @@ This plugin extends **Lottery for WooCommerce** (Giveaway for WooCommerce) with:
 3. Configure instant win rules and visibility on competition products as supported by your theme and Lottery for WooCommerce.
 
 == Changelog ==
+
+= 1.0.9 =
+* Restore `release.sh` and align releases with the Nera Competitions Standard pattern: PHP `ZipArchive`-first zip, sync back into this repo, commit, push `main` + tag (no orphan `git init` force-push), so tooling stays on GitHub.
 
 = 1.0.8 =
 * Plugin list and Dashboard → Updates thumbnail: ship `assets/icon-128x128.png` and `assets/icon-256x256.png` (from the project logo) for WordPress and Plugin Update Checker.
