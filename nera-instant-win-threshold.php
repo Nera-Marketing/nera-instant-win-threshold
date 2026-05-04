@@ -8,8 +8,44 @@
 
 defined( 'ABSPATH' ) || exit;
 
+define( 'NERA_IWT_VERSION', '1.0.0' );
 define( 'NERA_IWT_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'NERA_IWT_PLUGIN_FILE', __FILE__ );
+
+/**
+ * GitHub updates (Plugin Update Checker) — opt-in so sites do not call the API until the repo exists.
+ *
+ * In wp-config.php, after `https://github.com/Nera-Marketing/nera-instant-win-threshold` exists (public
+ * or authenticated) and has branch `main` plus at least one Release for zip updates:
+ *
+ *   define( 'NERA_IWT_ENABLE_GITHUB_UPDATES', true );
+ *
+ * Private repo: `define( 'NERA_IWT_GITHUB_TOKEN', 'ghp_...' );` (contents read-only is enough).
+ * Custom URL: `define( 'NERA_IWT_GITHUB_REPO_URL', 'https://github.com/Owner/repo/' );` or filter `nera_iwt_github_repo_url`.
+ *
+ * @link https://github.com/Nera-Marketing/nera-instant-win-threshold/
+ */
+if ( defined( 'NERA_IWT_ENABLE_GITHUB_UPDATES' ) && NERA_IWT_ENABLE_GITHUB_UPDATES ) {
+	$nera_iwt_github_repo_default = 'https://github.com/Nera-Marketing/nera-instant-win-threshold/';
+	if ( defined( 'NERA_IWT_GITHUB_REPO_URL' ) && is_string( NERA_IWT_GITHUB_REPO_URL ) && NERA_IWT_GITHUB_REPO_URL !== '' ) {
+		$nera_iwt_github_repo_default = NERA_IWT_GITHUB_REPO_URL;
+	}
+	$nera_iwt_github_repo = apply_filters( 'nera_iwt_github_repo_url', $nera_iwt_github_repo_default );
+
+	require_once NERA_IWT_PLUGIN_DIR . 'lib/plugin-update-checker/load-v5p5.php';
+	$nera_iwt_update_checker = YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
+		$nera_iwt_github_repo,
+		__FILE__,
+		'nera-instant-win-threshold'
+	);
+	$nera_iwt_update_checker->setBranch( 'main' );
+
+	if ( defined( 'NERA_IWT_GITHUB_TOKEN' ) && is_string( NERA_IWT_GITHUB_TOKEN ) && NERA_IWT_GITHUB_TOKEN !== '' ) {
+		$nera_iwt_update_checker->setAuthentication( NERA_IWT_GITHUB_TOKEN );
+	}
+
+	$nera_iwt_update_checker->getVcsApi()->enableReleaseAssets();
+}
 
 /** Lottery for WooCommerce main file (plugin slug / folder). */
 const NERA_IWT_LFW_PLUGIN_FILE = 'lottery-for-woocommerce/lottery-for-woocommerce.php';
