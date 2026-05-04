@@ -1,9 +1,9 @@
 {
 	"name": "Nera – Instant Win Rules",
 	"slug": "nera-instant-win-threshold",
-	"version": "1.0.9",
+	"version": "1.0.10",
 	"homepage": "https://github.com/Nera-Marketing/nera-instant-win-threshold",
-	"download_url": "https://github.com/Nera-Marketing/nera-instant-win-threshold/releases/download/v1.0.9/nera-instant-win-threshold-1.0.9.zip",
+	"download_url": "https://github.com/Nera-Marketing/nera-instant-win-threshold/releases/download/v1.0.10/nera-instant-win-threshold-1.0.10.zip",
 
 	"author": "Nera",
 	"author_homepage": "https://github.com/Nera-Marketing",
@@ -11,7 +11,7 @@
 	"requires": "6.0",
 	"tested": "6.8",
 	"requires_php": "7.4",
-	"last_updated": "2026-05-04 13:16:08",
+	"last_updated": "2026-05-04 13:31:49",
 
 	"upgrade_notice": "Update to the latest release for bug fixes and compatibility with Lottery for WooCommerce.",
 
