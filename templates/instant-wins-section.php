@@ -6,8 +6,8 @@
  * via {@see nera_iwt_wp_before_load_instant_wins_section()} / {@see nera_iwt_wp_after_load_instant_wins_section()}
  * and via {@see 'nera_competitions_instant_win_prizes_section_html'} (see instant-win-prizes-below-hero.php).
  *
- * Header counts are aligned with the details panel after fetch by {@see nera_iwt_enqueue_public_assets()}
- * (client schedule filter + data-nera-iwt-* hooks).
+ * Header counts align with the REST payload after fetch via {@see nera_iwt_enqueue_public_assets()}
+ * (plugin script syncs toggle badges from full CMS prize list).
  *
  * @package Nera_Instant_Win_Threshold
  *

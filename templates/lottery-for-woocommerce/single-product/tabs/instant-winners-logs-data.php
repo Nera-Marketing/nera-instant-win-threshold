@@ -2,7 +2,8 @@
 /**
  * Instant winners logs data (grouped prize cards).
  *
- * Visibility of rows is filtered via {@see nera_iwt_posts_results_instant_winner_visibility()}.
+ * Visibility of rows is not filtered by {@see nera_iwt_posts_results_instant_winner_visibility()}
+ * (storefront lists the full CMS prize pool).
  *
  * @package Nera_Instant_Win_Threshold
  *

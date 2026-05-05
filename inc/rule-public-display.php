@@ -382,12 +382,8 @@ function nera_iwt_get_lottery_ticket_sold_percent( $product ) {
 /**
  * Counts for the public instant-wins section header (single source for badge + Vue stats).
  *
- * Uses {@see nera_iwt_get_rest_instant_winner_log_ids()} — the same pool as the REST payload —
- * so the PHP-rendered toggle always starts from the correct max count.
- * Schedule prizes are included here (skip_schedule=true) because the client-side JS
- * (`instant-wins-client-schedule.js`) is the authoritative filter for future schedules and
- * will only ever reduce the count, never increase it.  Ticket-% prizes are still excluded
- * server-side inside that getter.
+ * Uses {@see nera_iwt_get_all_instant_winner_log_ids_for_product()} — the same full CMS pool
+ * as the REST payload — so header counts match every configured prize row.
  *
  * @param WC_Product $product Lottery product.
  * @return array{available:int,won:int,total:int}
@@ -402,7 +398,7 @@ function nera_iwt_get_public_instant_wins_section_counts( $product ) {
 		return $empty;
 	}
 
-	$ids = nera_iwt_get_rest_instant_winner_log_ids( $product->get_id() );
+	$ids = nera_iwt_get_all_instant_winner_log_ids_for_product( $product->get_id() );
 	if ( empty( $ids ) ) {
 		return $empty;
 	}
@@ -431,6 +427,42 @@ function nera_iwt_get_public_instant_wins_section_counts( $product ) {
 		'won'       => $won,
 		'total'     => $available + $won,
 	);
+}
+
+/**
+ * All instant-winner log IDs for a lottery product’s current relist (full CMS prize list).
+ *
+ * @param int $product_id Lottery product ID.
+ * @return int[]
+ */
+function nera_iwt_get_all_instant_winner_log_ids_for_product( $product_id ) {
+	$product_id = absint( $product_id );
+	if ( $product_id <= 0 || ! function_exists( 'lty_get_instant_winner_log_ids' ) ) {
+		return array();
+	}
+
+	$product = wc_get_product( $product_id );
+	if ( ! $product || ! $product->exists() ) {
+		return array();
+	}
+
+	$list_count = method_exists( $product, 'get_current_relist_count' )
+		? (int) $product->get_current_relist_count()
+		: 0;
+
+	$ids = lty_get_instant_winner_log_ids( $product_id, false, $list_count, 'all' );
+	if ( ! is_array( $ids ) || empty( $ids ) ) {
+		return array();
+	}
+
+	$out = array();
+	foreach ( $ids as $id ) {
+		$log_id = absint( $id );
+		if ( $log_id > 0 ) {
+			$out[] = $log_id;
+		}
+	}
+	return $out;
 }
 
 /**
@@ -534,44 +566,16 @@ function nera_iwt_is_lfw_instant_winner_log_ids_query( $query ) {
 }
 
 /**
- * Filter get_posts() results for instant-winner logs on the storefront (no LFW core edits).
+ * Storefront instant-winner log queries: do not strip rows by schedule / ticket-% visibility.
+ * The product-page instant-win section (REST + templates) lists every CMS-configured prize.
  *
  * @param array<int|WP_Post> $posts Array of post IDs or post objects.
  * @param WP_Query           $query Query instance.
  * @return array<int|WP_Post>
  */
 function nera_iwt_posts_results_instant_winner_visibility( $posts, $query ) {
-	if ( is_admin() ) {
-		return $posts;
-	}
-
-	if ( ! nera_iwt_is_lfw_instant_winner_log_ids_query( $query ) ) {
-		return $posts;
-	}
-
-	$lottery_id = nera_iwt_extract_lottery_id_from_meta_query( $query->get( 'meta_query' ) );
-	if ( $lottery_id <= 0 ) {
-		return $posts;
-	}
-
-	$product = wc_get_product( $lottery_id );
-	if ( ! $product || ! $product->exists() ) {
-		return $posts;
-	}
-
-	$out = array();
-	foreach ( (array) $posts as $item ) {
-		$log_id = is_object( $item ) ? (int) $item->ID : (int) $item;
-		if ( $log_id <= 0 ) {
-			continue;
-		}
-		if ( ! nera_iwt_instant_winner_log_included_in_storefront_list( $log_id, $product ) ) {
-			continue;
-		}
-		$out[] = $item;
-	}
-
-	return $out;
+	unset( $query );
+	return $posts;
 }
 
 add_filter( 'posts_results', 'nera_iwt_posts_results_instant_winner_visibility', 10, 2 );
@@ -837,6 +841,14 @@ function nera_iwt_admin_enqueue_rule_visibility( $hook_suffix ) {
 		(string) filemtime( $js ),
 		true
 	);
+
+	wp_localize_script(
+		'nera-iwt-admin-rule-visibility',
+		'neraIwtAdmin',
+		array(
+			'sequentialTicketConflictMsg' => nera_iwt_message_sequential_ticket_pattern_conflict(),
+		)
+	);
 }
 
 add_action( 'admin_enqueue_scripts', 'nera_iwt_admin_enqueue_rule_visibility', 99 );
@@ -846,54 +858,14 @@ add_action( 'admin_enqueue_scripts', 'nera_iwt_admin_enqueue_rule_visibility', 9
 // ---------------------------------------------------------------------------
 
 /**
- * Return storefront log IDs for the REST API response.
+ * Log IDs for the instant-wins REST payload — full CMS list for the current relist.
  *
- * Unlike nera_iwt_get_storefront_instant_winner_log_ids(), schedule-pending
- * prizes are NOT removed here.  Instead they are included in the REST payload
- * along with their schedule_at string so client-side JavaScript can compare
- * against the visitor's browser local time.
- *
- * Ticket-sold-percentage prizes that have NOT met their threshold are still
- * excluded server-side (the server is the only party that knows the sold count).
+ * Schedule and ticket-sold-% metadata are attached per prize so the storefront can
+ * present every configured rule; visibility styling is left to the theme/Vue layer.
  *
  * @param int $product_id WooCommerce product ID.
  * @return int[]
  */
 function nera_iwt_get_rest_instant_winner_log_ids( $product_id ) {
-	$product_id = absint( $product_id );
-	if ( $product_id <= 0 || ! function_exists( 'lty_get_instant_winner_log_ids' ) ) {
-		return array();
-	}
-	$product = wc_get_product( $product_id );
-	if ( ! $product || ! $product->exists() ) {
-		return array();
-	}
-
-	$list_count = method_exists( $product, 'get_current_relist_count' )
-		? (int) $product->get_current_relist_count()
-		: 0;
-
-	$ids = lty_get_instant_winner_log_ids( $product_id, false, $list_count, 'all' );
-	if ( ! is_array( $ids ) || empty( $ids ) ) {
-		return array();
-	}
-
-	$out = array();
-	foreach ( $ids as $id ) {
-		$log_id = absint( $id );
-		if ( $log_id <= 0 ) {
-			continue;
-		}
-		// Won prizes always show.
-		if ( 'lty_won' === get_post_status( $log_id ) ) {
-			$out[] = $log_id;
-			continue;
-		}
-		// Use skip_schedule=true so schedule prizes pass this check.
-		// Ticket-% prizes that haven't met their threshold are still excluded.
-		if ( nera_iwt_available_log_visible_on_storefront( $log_id, $product, array( 'skip_schedule' => true ) ) ) {
-			$out[] = $log_id;
-		}
-	}
-	return $out;
+	return nera_iwt_get_all_instant_winner_log_ids_for_product( $product_id );
 }

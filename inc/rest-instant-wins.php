@@ -164,11 +164,8 @@ function nera_iwt_rest_pick_representative_log_for_prize_group( array $log_ids )
 /**
  * Build instant-wins REST payload (prize groups + stats).
  *
- * Uses nera_iwt_get_rest_instant_winner_log_ids() which skips server-side schedule
- * filtering. Prizes are grouped by md5( prize_message + rule_id ) so two schedule
- * rules with the same prize text do not clobber each other. Each row includes
- * `schedule_at` / `schedule_end` use the same source as the admin table: when GMT
- * meta is set it is converted to datetime-local strings; otherwise stored local meta.
+ * Uses nera_iwt_get_rest_instant_winner_log_ids() which returns every log for the relist.
+ * Each row includes rule_type, ticket_pct, and schedule_* for CMS parity with admin.
  *
  * @param int $product_id Product ID.
  * @return array<string,mixed>|WP_Error
@@ -269,6 +266,7 @@ function nera_iwt_rest_instant_wins_build_payload( $product_id ) {
 				'won_count'          => 0,
 				'winners'            => array(),
 				'rule_type'          => $rule_type,
+				'ticket_pct'         => $vis ? (int) $vis['ticket_pct'] : 0,
 				'schedule_at'        => $schedule_at,
 				'schedule_end'       => $schedule_end,
 				'schedule_at_utc'    => $schedule_at_utc,

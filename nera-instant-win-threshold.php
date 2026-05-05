@@ -3,7 +3,7 @@
  * Plugin Name: Nera – Instant Win Rules
  * Plugin URI: https://github.com/Nera-Marketing/nera-instant-win-threshold
  * Description: Instant win rule types (instant, scheduled, ticket sold %), public prize visibility, and optional instant-win UI overrides for Lottery for WooCommerce.
- * Version: 1.0.12
+ * Version: 1.0.13
  * Author: Nera
  * Text Domain: nera-instant-win-threshold
  * Requires at least: 6.0
@@ -16,7 +16,7 @@ defined( 'ABSPATH' ) || exit;
 
 use YahnisElsts\PluginUpdateChecker\v5p5\Vcs\GitHubApi;
 
-define( 'NERA_IWT_VERSION', '1.0.12' );
+define( 'NERA_IWT_VERSION', '1.0.13' );
 define( 'NERA_IWT_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'NERA_IWT_PLUGIN_FILE', __FILE__ );
 
@@ -244,6 +244,7 @@ if ( ! nera_iwt_is_lfw_active() ) {
 require_once NERA_IWT_PLUGIN_DIR . 'inc/cache.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/theme-instant-wins-section-override.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/rule-public-display.php';
+require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-sequential-ticket-guard.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/visibility.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/rest-instant-wins.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/woocommerce-lottery-template-override.php';
@@ -285,10 +286,7 @@ add_filter( 'nera_competitions_instant_win_prizes_section_html', 'nera_iwt_filte
  * Front assets for plugin-rendered instant-win section.
  *
  * CSS  — badge row height tweaks.
- * JS   — client-side schedule filter (patches window.fetch to compare
- *         prize schedule_at against the visitor's browser local time).
- *         Loaded in <head> so the patch is in place before Vue's onMounted
- *         fetch call runs.
+ * JS   — syncs instant-wins REST response stats into the collapsible header counts.
  */
 function nera_iwt_enqueue_public_assets() {
 	if ( ! is_singular( 'product' ) ) {

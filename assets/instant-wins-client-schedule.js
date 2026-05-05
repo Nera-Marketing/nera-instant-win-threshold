@@ -1,21 +1,13 @@
 /**
- * Client-side schedule filter for instant-win prizes + toggle count sync.
+ * Instant-win REST fetch hook: sync toggle/header counts with the API response.
  *
- * Intercepts window.fetch for /wp-json/nera/v1/instant-wins/<id>, filters
- * schedule prizes using `schedule_at` / `schedule_end` as **browser-local** wall
- * times ({@see neraIwtParseScheduleLocalMs}) with {@see Date.now()}, and syncs stats.
- *
- * Schedule prize (`rule_type === 'schedule'`) visibility:
- * - Start only: show when schedule_at <= now (now has reached or passed start).
- * - Start + end: show when schedule_at <= now <= schedule_end (inclusive).
- * - End only (rare): show when now <= schedule_end.
- * - Neither bound parseable: do not filter out (show).
+ * Intercepts window.fetch for /wp-json/nera/v1/instant-wins/<id> so the collapsible
+ * header stays aligned with the prize list returned by the plugin (full CMS pool).
+ * Schedule / ticket-% presentation is handled by the theme Vue layer using rule_type,
+ * schedule_*, and ticket_pct on each prize row.
  *
  * Header counts start hidden (nera-iwt-header-counts--pending) until the first
- * successful client-filtered response, or a timeout fallback to server-rendered text.
- *
- * Works with both the plugin template (data-nera-iwt-*) and the theme template
- * (plain spans / text nodes) — no theme edits required.
+ * successful response, or a timeout fallback to server-rendered text.
  */
 /* global window, Response, document, neraIwtClient */
 ( function () {
@@ -27,62 +19,6 @@
 	var neraIwtFallbackTimer = null;
 
 	var neraIwtBootstrapTimer = null;
-
-	/**
-	 * Whether a schedule-rule prize row should appear (browser-local wall clock).
-	 *
-	 * @param {object} prize REST prize row (`rule_type`, `schedule_at`, `schedule_end`).
-	 * @param {number} now    Date.now() in ms.
-	 * @return {boolean}
-	 */
-	function neraIwtSchedulePrizeVisibleInClientWindow( prize, now ) {
-		if ( prize.rule_type !== 'schedule' ) {
-			return true;
-		}
-		var atStr =
-			prize.schedule_at && typeof prize.schedule_at === 'string'
-				? prize.schedule_at.trim()
-				: '';
-		var endStr =
-			prize.schedule_end && typeof prize.schedule_end === 'string'
-				? prize.schedule_end.trim()
-				: '';
-		var atMs = atStr ? neraIwtParseScheduleLocalMs( atStr ) : NaN;
-		var endMs = endStr ? neraIwtParseScheduleLocalMs( endStr ) : NaN;
-		var hasAt = atStr !== '' && ! isNaN( atMs );
-		var hasEnd = endStr !== '' && ! isNaN( endMs );
-		if ( hasAt && hasEnd ) {
-			return now >= atMs && now <= endMs;
-		}
-		if ( hasAt ) {
-			return now >= atMs;
-		}
-		if ( hasEnd ) {
-			return now <= endMs;
-		}
-		return true;
-	}
-
-	/**
-	 * Parse schedule_at / schedule_end for local-time comparison (no Z / offset suffix).
-	 *
-	 * @param {string} raw Raw string from REST (e.g. "2026-05-03T16:20" or "2026-05-03 16:20:00").
-	 * @return {number} epoch ms or NaN
-	 */
-	function neraIwtParseScheduleLocalMs( raw ) {
-		if ( ! raw || typeof raw !== 'string' ) {
-			return NaN;
-		}
-		var s = raw.trim();
-		if ( s.indexOf( 'T' ) === -1 ) {
-			s = s.replace( ' ', 'T' );
-		}
-		// Y-m-dTH:i → add seconds for engines that are picky
-		if ( /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test( s ) ) {
-			s += ':00';
-		}
-		return new Date( s ).getTime();
-	}
 
 	/**
 	 * @param {HTMLElement|null} btn Optional toggle button.
@@ -286,52 +222,20 @@
 				}
 
 				var prizes = Array.isArray( body.data.prizes ) ? body.data.prizes : [];
-				var now = Date.now();
-
-				var filtered = prizes.filter( function ( prize ) {
-					if ( prize.rule_type !== 'schedule' ) {
-						return true;
-					}
-					return neraIwtSchedulePrizeVisibleInClientWindow( prize, now );
-				} );
-
 				var totalWon = 0;
 				var remaining = 0;
-				filtered.forEach( function ( p ) {
+				prizes.forEach( function ( p ) {
 					var won = parseInt( p.won_count, 10 ) || 0;
 					var tot = parseInt( p.total_available, 10 ) || 0;
 					totalWon += won;
 					remaining += Math.max( 0, tot - won );
 				} );
 
-				var newStats = {
-					total_available: remaining + totalWon,
-					total_won:       totalWon,
-				};
-
-				// Always sync toggle to the same numbers Vue will use (fixes PHP vs REST drift).
 				requestAnimationFrame( function () {
 					neraIwtUpdateToggleCounts( remaining, totalWon );
 				} );
 
-				var origStats = body.data.stats || {};
-				var statsSame = String( newStats.total_available ) === String( origStats.total_available )
-					&& String( newStats.total_won ) === String( origStats.total_won );
-				var prizesSame = filtered.length === prizes.length;
-
-				if ( prizesSame && statsSame ) {
-					return response;
-				}
-
-				var newBody = JSON.parse( JSON.stringify( body ) );
-				newBody.data.prizes = filtered;
-				newBody.data.stats = newStats;
-
-				return new Response( JSON.stringify( newBody ), {
-					status:     response.status,
-					statusText: response.statusText,
-					headers:    { 'Content-Type': 'application/json' },
-				} );
+				return response;
 
 			} ).catch( function () {
 				requestAnimationFrame( function () {

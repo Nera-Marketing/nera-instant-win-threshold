@@ -4,8 +4,150 @@
  * Augments "Add rule" and bulk "Save" requests with nera_* fields (LFW only
  * serializes its own keys from each table row).
  */
+(function () {
+	'use strict';
+
+	/**
+	 * Matches LFW Lottery product fields: Sequential either as automatic `_lty_ticket_number_type` "2"
+	 * or user-selection `_lty_tickets_per_tab_display_type` "1".
+	 * Exposed for jQuery handlers (unsaved-state / publish guard).
+	 *
+	 * @return {boolean}
+	 */
+	window.neraIwtDomHasSequentialTicketPattern = function () {
+		var genEl = document.getElementById('_lty_ticket_generation_type');
+		var gen = genEl ? String(genEl.value || '') : '';
+		if (gen === '1') {
+			var nt = document.getElementById('_lty_ticket_number_type');
+			return !!(nt && String(nt.value || '') === '2');
+		}
+		if (gen === '2') {
+			var tt = document.getElementById('_lty_tickets_per_tab_display_type');
+			return !!(tt && String(tt.value || '') === '1');
+		}
+		return false;
+	};
+
+	/**
+	 * Clear LFW “unsaved instant winner rules” flag when Ticket Number Pattern in the DOM is no
+	 * longer Sequential — runs before LTY’s submit handler (capture phase).
+	 *
+	 * @return {void}
+	 */
+	window.neraIwtClearInstantWinUnsavedIfDomTicketPatternNotSequential = function () {
+		document.querySelectorAll('.lty-unsaved-instant-winner-rules').forEach(function (hidden) {
+			hidden.value = '';
+		});
+		document.querySelectorAll('.lty-save-instant-winners-rules').forEach(function (btn) {
+			btn.disabled = true;
+		});
+	};
+
+	document.addEventListener(
+		'submit',
+		function (e) {
+			var form = e.target;
+			if (!form || form.nodeName !== 'FORM' || form.id !== 'post') {
+				return;
+			}
+			var pt = document.getElementById('product-type');
+			if (!pt || String(pt.value || '') !== 'lottery') {
+				return;
+			}
+			if (typeof window.neraIwtDomHasSequentialTicketPattern !== 'function') {
+				return;
+			}
+			if (window.neraIwtDomHasSequentialTicketPattern()) {
+				return;
+			}
+			window.neraIwtClearInstantWinUnsavedIfDomTicketPatternNotSequential();
+		},
+		true
+	);
+
+	/**
+	 * @return {string}
+	 */
+	function neraIwtAddRuleModalRuleType() {
+		var modal = document.getElementById('lty_lottery_instant_winners_rule_modal');
+		if (!modal) {
+			return 'instant';
+		}
+		var sel = modal.querySelector('.nera-iwt-public-rule-type');
+		return sel ? String(sel.value || 'instant') : 'instant';
+	}
+
+	// Capture phase: runs before LFW/jQuery delegated handlers so the request never fires.
+	document.addEventListener(
+		'click',
+		function (e) {
+			var t = e.target;
+			if (!t || typeof t.closest !== 'function') {
+				return;
+			}
+			if (!t.closest('.lty-add-instant-winner-rule')) {
+				return;
+			}
+			if (!window.neraIwtDomHasSequentialTicketPattern()) {
+				return;
+			}
+			var ruleType = neraIwtAddRuleModalRuleType();
+			if (ruleType === 'instant') {
+				return;
+			}
+			e.preventDefault();
+			e.stopPropagation();
+			if (typeof e.stopImmediatePropagation === 'function') {
+				e.stopImmediatePropagation();
+			}
+			var msg =
+				typeof window.neraIwtAdmin !== 'undefined' &&
+				window.neraIwtAdmin &&
+				window.neraIwtAdmin.sequentialTicketConflictMsg
+					? window.neraIwtAdmin.sequentialTicketConflictMsg
+					: 'Change Ticket Number Pattern from Sequential before using this Rule Type.';
+			window.alert(msg);
+		},
+		true
+	);
+})();
+
 (function ($) {
 	'use strict';
+
+	/**
+	 * Last known DOM sequential state (for detecting Sequential → non-Sequential transitions only).
+	 *
+	 * @type {boolean|null}
+	 */
+	var neraIwtPrevTicketPatternSequentialDom = null;
+
+	function neraIwtReadDomSequentialTicketPattern() {
+		return typeof window.neraIwtDomHasSequentialTicketPattern === 'function'
+			? window.neraIwtDomHasSequentialTicketPattern()
+			: false;
+	}
+
+	/**
+	 * LTY blocks "Update" while `.lty-unsaved-instant-winner-rules` is set. After the user fixes
+	 * Ticket Number Pattern in the DOM (Sequential → Shuffle/Random), clear that flag so they
+	 * can save the product without reloading. Only runs on that transition.
+	 *
+	 * @return {void}
+	 */
+	function neraIwtMaybeClearInstantWinnersUnsavedAfterTicketPatternFix() {
+		var nowSeq = neraIwtReadDomSequentialTicketPattern();
+		if (neraIwtPrevTicketPatternSequentialDom === true && nowSeq === false) {
+			if (typeof window.neraIwtClearInstantWinUnsavedIfDomTicketPatternNotSequential === 'function') {
+				window.neraIwtClearInstantWinUnsavedIfDomTicketPatternNotSequential();
+			}
+		}
+		neraIwtPrevTicketPatternSequentialDom = nowSeq;
+	}
+
+	function neraIwtResetTicketPatternSequentialBaseline() {
+		neraIwtPrevTicketPatternSequentialDom = neraIwtReadDomSequentialTicketPattern();
+	}
 
 	function neraIwtClampTicketPctValue(raw) {
 		var n = parseInt(String(raw === undefined || raw === null ? '0' : raw), 10);
@@ -385,7 +527,16 @@
 		neraIwtMarkInstantWinnersRulesDirty();
 	});
 
+	$(document).on(
+		'change select2:select',
+		'#_lty_ticket_number_type, #_lty_tickets_per_tab_display_type, #_lty_ticket_generation_type',
+		function () {
+			neraIwtMaybeClearInstantWinnersUnsavedAfterTicketPatternFix();
+		}
+	);
+
 	$(function () {
+		neraIwtResetTicketPatternSequentialBaseline();
 		movePopupFieldsToTop();
 		scheduleColumnReorder();
 		refreshAll();
@@ -401,6 +552,7 @@
 	$(document.body).on('woocommerce-product-type-change', function () {
 		scheduleColumnReorder();
 		window.setTimeout(function () {
+			neraIwtResetTicketPatternSequentialBaseline();
 			bindNeraIwtModalOpenHandlers();
 			movePopupFieldsToTop();
 			refreshAll();

@@ -4,7 +4,7 @@ Tags: woocommerce, lottery, instant win, competition, giveaway
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.0.12
+Stable tag: 1.0.13
 License: GPLv2 or later
 
 Instant win rule types, public prize visibility, and optional instant-win UI overrides for Lottery for WooCommerce.
@@ -26,6 +26,12 @@ This plugin extends **Lottery for WooCommerce** (Giveaway for WooCommerce) with:
 3. Configure instant win rules and visibility on competition products as supported by your theme and Lottery for WooCommerce.
 
 == Changelog ==
+
+= 1.0.13 =
+* Admin — Block saving instant-win rules when Ticket Number Pattern is Sequential and Rule type is Schedule or Ticket Sold % (AJAX + modal guard); supports Automatic and User Chooses ticket modes.
+* Admin — After changing Ticket Number Pattern to Random/Shuffled in the product form, clear the Lottery “unsaved instant win rules” lock so WordPress Update works without a full reload (capture-phase submit + SelectWoo-friendly handlers).
+* Storefront — Instant Win REST / counts list all CMS-configured prizes (schedule / ticket-% metadata preserved); optional client header sync without hiding scheduled rows.
+* REST — Prize payload includes `ticket_pct` for themes.
 
 = 1.0.12 =
 * Admin — Instant Win rules: Add Rule modal fields aligned with Lottery for WooCommerce (same `<p>` layout and 50% widths as Ticket / Prize rows; `datetime-local` + ticket % covered where LFW omits them).
