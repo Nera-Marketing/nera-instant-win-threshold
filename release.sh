@@ -170,15 +170,48 @@ echo "▶ Zip OK ($(wc -c < "$ZIP_PATH" | tr -d ' ') bytes)"
 echo "▶ Syncing release tree into git working tree..."
 cd "$PLUGIN_DIR"
 
-# Release commit identity (parity with wp-content/plugins/nera-spin-to-win/release.sh).
-git config user.name "Minh Le"
-git config user.email "minh@nera.marketing"
+# Release commit author: prefer repo .git/config (--local), then global, then defaults.
+RELEASE_AUTHOR_NAME="$(git config --local user.name 2>/dev/null || true)"
+RELEASE_AUTHOR_EMAIL="$(git config --local user.email 2>/dev/null || true)"
+if [ -z "$RELEASE_AUTHOR_NAME" ]; then
+  RELEASE_AUTHOR_NAME="$(git config --global user.name 2>/dev/null || true)"
+fi
+if [ -z "$RELEASE_AUTHOR_EMAIL" ]; then
+  RELEASE_AUTHOR_EMAIL="$(git config --global user.email 2>/dev/null || true)"
+fi
+if [ -z "$RELEASE_AUTHOR_NAME" ]; then
+  RELEASE_AUTHOR_NAME="Minh Le"
+fi
+if [ -z "$RELEASE_AUTHOR_EMAIL" ]; then
+  RELEASE_AUTHOR_EMAIL="minh@nera.marketing"
+fi
+git config user.name "$RELEASE_AUTHOR_NAME"
+git config user.email "$RELEASE_AUTHOR_EMAIL"
 
 if command -v rsync >/dev/null 2>&1; then
   rsync -a "$WORK_DIR/" "$PLUGIN_DIR/"
 else
-  echo "▶ rsync not found — using cp -a (Git Bash / Windows)..."
-  ( cd "$WORK_DIR" && cp -a . "$PLUGIN_DIR/" )
+  if [ -f "/c/Windows/System32/robocopy.exe" ]; then
+    WIN_SRC=$(cd "$WORK_DIR" && pwd -W)
+    WIN_DST=$(cd "$PLUGIN_DIR" && pwd -W)
+    if [ -n "$WIN_SRC" ] && [ -n "$WIN_DST" ]; then
+      echo "▶ rsync not found — using robocopy (Windows)..."
+      set +e
+      MSYS_NO_PATHCONV=1 /c/Windows/System32/robocopy.exe "$WIN_SRC" "$WIN_DST" /E /R:2 /W:1 /NFL /NDL /NJH /NJS
+      rc=$?
+      set -e
+      if [ "$rc" -ge 8 ]; then
+        echo "ERROR: robocopy failed (exit $rc)"
+        exit 1
+      fi
+    else
+      echo "▶ rsync not found — pwd -W unavailable — using cp -a (Git Bash / Windows)..."
+      ( cd "$WORK_DIR" && cp -a . "$PLUGIN_DIR/" )
+    fi
+  else
+    echo "▶ rsync not found — using cp -a (Git Bash / Windows)..."
+    ( cd "$WORK_DIR" && cp -a . "$PLUGIN_DIR/" )
+  fi
 fi
 
 git add -A
