@@ -9,12 +9,15 @@
 # Requirements: git, grep, sed, php + build-wp-release-zip.php (or zip), gh (optional).
 # Optional SSH: set origin to $GITHUB_REMOTE or use HTTPS (see theme release.sh).
 #
+# Cross-platform: Linux, macOS, Windows Git Bash (MSYS). WSL behaves like Linux (rsync/cp;
+# no robocopy). Push branch: default main; override with RELEASE_GIT_BRANCH=master if needed.
+#
 # What it does:
 #   1. Resolves version from argument or main plugin file
 #   2. npm run build when package.json exists
 #   3. Copies plugin to a clean temp dir; sets * Version + NERA_IWT_VERSION; syncs readme Stable tag + plugin.json
 #   4. Builds PLUGIN_SLUG-VERSION.zip (PHP ZipArchive preferred — never PowerShell Compress-Archive)
-#   5. Syncs the clean tree back into this git repo, commits, pushes main + tag (no force-push to main)
+#   5. Syncs the clean tree back into this git repo, commits, pushes branch + tag (see RELEASE_GIT_BRANCH)
 #   6. gh release create / upload on github.com
 #
 # Why this file was missing on GitHub: an older flow used `git init` in /tmp without `release.sh`,
@@ -30,8 +33,24 @@ GITHUB_REMOTE="git@github.com-nera:${GITHUB_REPO}.git"
 # github.com-nera = SSH Host alias only (same as nera-spin-to-win/release.sh). gh uses GH_HOST=github.com.
 
 PID="$$"
-WORK_DIR="/tmp/${PLUGIN_SLUG}-release-${PID}"
-STAGE_ZIP_PARENT="/tmp/${PLUGIN_SLUG}-zipparent-${PID}"
+# Portable temp base: macOS sets TMPDIR; Linux often uses /tmp; Git Bash uses TMPDIR or /tmp.
+_RELEASE_TMP="${TMPDIR:-/tmp}"
+_RELEASE_TMP="${_RELEASE_TMP%/}"
+WORK_DIR="${_RELEASE_TMP}/${PLUGIN_SLUG}-release-${PID}"
+STAGE_ZIP_PARENT="${_RELEASE_TMP}/${PLUGIN_SLUG}-zipparent-${PID}"
+
+# Git Bash: pwd -W; Cygwin/MSYS2: cygpath — used for robocopy Windows paths (MSYS_NO_PATHCONV).
+msys_win_path() {
+  local dir="$1"
+  local w=""
+  if command -v cygpath >/dev/null 2>&1; then
+    w="$(MSYS_NO_PATHCONV=1 cygpath -aw "$dir" 2>/dev/null)" || w=""
+  fi
+  if [ -z "$w" ]; then
+    w="$(cd "$dir" && pwd -W 2>/dev/null)" || w=""
+  fi
+  printf '%s' "$w"
+}
 
 cleanup() {
   rm -rf "$WORK_DIR" "$STAGE_ZIP_PARENT" 2>/dev/null || true
@@ -192,8 +211,8 @@ if command -v rsync >/dev/null 2>&1; then
   rsync -a "$WORK_DIR/" "$PLUGIN_DIR/"
 else
   if [ -f "/c/Windows/System32/robocopy.exe" ]; then
-    WIN_SRC=$(cd "$WORK_DIR" && pwd -W)
-    WIN_DST=$(cd "$PLUGIN_DIR" && pwd -W)
+    WIN_SRC="$(msys_win_path "$WORK_DIR")"
+    WIN_DST="$(msys_win_path "$PLUGIN_DIR")"
     if [ -n "$WIN_SRC" ] && [ -n "$WIN_DST" ]; then
       echo "▶ rsync not found — using robocopy (Windows)..."
       set +e
@@ -221,8 +240,10 @@ else
   git commit -m "Release $TAG" -q
 fi
 
-echo "▶ Pushing main to origin..."
-git push origin main
+# Push the local ref for this branch name (default: main). Set RELEASE_GIT_BRANCH=master if your default branch is master.
+PUSH_BRANCH="${RELEASE_GIT_BRANCH:-main}"
+echo "▶ Pushing ${PUSH_BRANCH} to origin..."
+git push origin "$PUSH_BRANCH"
 
 if git rev-parse "$TAG" >/dev/null 2>&1; then
   git tag -d "$TAG" 2>/dev/null || true
@@ -236,6 +257,10 @@ git push origin "refs/tags/${TAG}" --force
 GH_CMD=""
 if command -v gh >/dev/null 2>&1; then
   GH_CMD="gh"
+elif [ -x "/opt/homebrew/bin/gh" ]; then
+  GH_CMD="/opt/homebrew/bin/gh"
+elif [ -x "/usr/local/bin/gh" ]; then
+  GH_CMD="/usr/local/bin/gh"
 elif [ -f "/c/Program Files/GitHub CLI/gh.exe" ]; then
   GH_CMD="/c/Program Files/GitHub CLI/gh.exe"
 elif [ -f "/c/Program Files (x86)/GitHub CLI/gh.exe" ]; then
