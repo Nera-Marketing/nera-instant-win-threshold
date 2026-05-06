@@ -112,6 +112,171 @@
 	);
 })();
 
+/**
+ * Instant-win ticket number must fall within the product pool (numeric tickets only; prefix/suffix patterns are not range-checked in admin).
+ */
+(function () {
+	'use strict';
+
+	/**
+	 * @return {number}
+	 */
+	function neraIwtDomEffectiveTicketStart() {
+		var genEl = document.getElementById('_lty_ticket_generation_type');
+		var gen = genEl ? String(genEl.value || '') : '';
+		if (gen === '2') {
+			var sn = document.getElementById('_lty_ticket_start_number');
+			var v = sn ? parseInt(String(sn.value || '').trim(), 10) : NaN;
+			if (isNaN(v)) {
+				return 1;
+			}
+			return v;
+		}
+		if (gen === '1') {
+			var ntEl = document.getElementById('_lty_ticket_number_type');
+			var nt = ntEl ? String(ntEl.value || '') : '';
+			if (nt === '2') {
+				var seq = document.getElementById('_lty_ticket_sequential_start_number');
+				var sv = seq ? parseInt(String(seq.value || '').trim(), 10) : NaN;
+				if (isNaN(sv)) {
+					return 1;
+				}
+				return sv;
+			}
+			if (nt === '3') {
+				var sh = document.getElementById('_lty_ticket_shuffled_start_number');
+				var hv = sh ? parseInt(String(sh.value || '').trim(), 10) : NaN;
+				if (isNaN(hv)) {
+					return 1;
+				}
+				return hv;
+			}
+		}
+		return 1;
+	}
+
+	/**
+	 * @return {number}
+	 */
+	function neraIwtDomTicketRangeMax() {
+		var cap =
+			typeof window.neraIwtAdmin !== 'undefined' &&
+			window.neraIwtAdmin &&
+			typeof window.neraIwtAdmin.maxTicketNumberCap === 'number'
+				? window.neraIwtAdmin.maxTicketNumberCap
+				: 0;
+		var start = neraIwtDomEffectiveTicketStart();
+		var mtEl = document.getElementById('_lty_maximum_tickets');
+		var mt = mtEl ? parseInt(String(mtEl.value || '1'), 10) : 1;
+		if (isNaN(mt) || mt < 1) {
+			mt = 1;
+		}
+		if (cap > 0) {
+			return Math.max(start, cap);
+		}
+		return Math.max(start, start + mt - 1);
+	}
+
+	/**
+	 * @param {number} min
+	 * @param {number} max
+	 * @return {string}
+	 */
+	function neraIwtTicketRangeMsg(min, max) {
+		var tpl =
+			typeof window.neraIwtAdmin !== 'undefined' && window.neraIwtAdmin && window.neraIwtAdmin.ticketRangeInvalidMsg
+				? window.neraIwtAdmin.ticketRangeInvalidMsg
+				: 'Ticket Number must be between {min} and {max} (inclusive).';
+		return String(tpl).replace(/\{min\}/g, String(min)).replace(/\{max\}/g, String(max));
+	}
+
+	window.neraIwtDomEffectiveTicketStart = neraIwtDomEffectiveTicketStart;
+	window.neraIwtDomTicketRangeMax = neraIwtDomTicketRangeMax;
+	window.neraIwtTicketRangeAlertMessage = neraIwtTicketRangeMsg;
+
+	function neraIwtGetActiveAddRuleModalForTicket() {
+		var $b = document.querySelector('.blocker.jquery-modal.blocker.current');
+		if ($b) {
+			var inside = $b.querySelector('#lty_lottery_instant_winners_rule_modal');
+			if (inside) {
+				return inside;
+			}
+		}
+		return document.getElementById('lty_lottery_instant_winners_rule_modal');
+	}
+
+	document.addEventListener(
+		'click',
+		function (e) {
+			var t = e.target;
+			if (!t || typeof t.closest !== 'function') {
+				return;
+			}
+			if (!t.closest('.lty-add-instant-winner-rule')) {
+				return;
+			}
+			var modal = neraIwtGetActiveAddRuleModalForTicket();
+			var inp = modal ? modal.querySelector('.lty-ticket-number') : null;
+			var raw = inp ? String(inp.value || '').trim() : '';
+			if (!raw || !/^\d+$/.test(raw)) {
+				return;
+			}
+			var n = parseInt(raw, 10);
+			var min = neraIwtDomEffectiveTicketStart();
+			var max = neraIwtDomTicketRangeMax();
+			if (min > max) {
+				return;
+			}
+			if (n < min || n > max) {
+				e.preventDefault();
+				e.stopPropagation();
+				if (typeof e.stopImmediatePropagation === 'function') {
+					e.stopImmediatePropagation();
+				}
+				window.alert(neraIwtTicketRangeMsg(min, max));
+			}
+		},
+		true
+	);
+
+	document.addEventListener(
+		'click',
+		function (e) {
+			var t = e.target;
+			if (!t || typeof t.closest !== 'function') {
+				return;
+			}
+			if (!t.closest('.lty-save-instant-winners-rules')) {
+				return;
+			}
+			var min = neraIwtDomEffectiveTicketStart();
+			var max = neraIwtDomTicketRangeMax();
+			if (min > max) {
+				return;
+			}
+			var inputs = document.querySelectorAll('.lty-instant-winners-rules-contents .lty-ticket-number');
+			var i;
+			for (i = 0; i < inputs.length; i++) {
+				var raw = String(inputs[i].value || '').trim();
+				if (!raw || !/^\d+$/.test(raw)) {
+					continue;
+				}
+				var n = parseInt(raw, 10);
+				if (n < min || n > max) {
+					e.preventDefault();
+					e.stopPropagation();
+					if (typeof e.stopImmediatePropagation === 'function') {
+						e.stopImmediatePropagation();
+					}
+					window.alert(neraIwtTicketRangeMsg(min, max));
+					return;
+				}
+			}
+		},
+		true
+	);
+})();
+
 (function ($) {
 	'use strict';
 

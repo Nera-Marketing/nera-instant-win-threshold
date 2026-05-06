@@ -847,6 +847,10 @@ function nera_iwt_admin_enqueue_rule_visibility( $hook_suffix ) {
 		'neraIwtAdmin',
 		array(
 			'sequentialTicketConflictMsg' => nera_iwt_message_sequential_ticket_pattern_conflict(),
+			'maxTicketNumberCap'          => ( defined( 'NERA_IWT_MAX_TICKET_NUMBER' ) && NERA_IWT_MAX_TICKET_NUMBER > 0 )
+				? (int) NERA_IWT_MAX_TICKET_NUMBER
+				: 0,
+			'ticketRangeInvalidMsg'       => __( 'Ticket Number must be between {min} and {max} (inclusive).', 'nera-instant-win-threshold' ),
 		)
 	);
 }
