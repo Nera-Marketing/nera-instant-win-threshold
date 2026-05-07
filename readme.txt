@@ -4,7 +4,7 @@ Tags: woocommerce, lottery, instant win, competition, giveaway
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.0.17
+Stable tag: 1.0.18
 License: GPLv2 or later
 
 Instant win rule types, public prize visibility, and optional instant-win UI overrides for Lottery for WooCommerce.
@@ -26,6 +26,12 @@ This plugin extends **Lottery for WooCommerce** (Giveaway for WooCommerce) with:
 3. Configure instant win rules and visibility on competition products as supported by your theme and Lottery for WooCommerce.
 
 == Changelog ==
+
+= 1.0.18 =
+* Admin — Per-product Ticket Number Max (Ticket Generation Settings) drives numeric ticket pool upper bound with site/LFW fallbacks; instant-win validation and helpers aligned (`ticket-generation-override`, `admin-instant-win-ticket-range`).
+* Admin — Guards when Ticket Generation is Automatic: block Schedule / Ticket Sold % rule types and switching away from Automatic while those rules exist (server + client).
+* Admin — Instant Win rules note shows the current allowed numeric ticket range for the product (effective start through resolved max).
+* Admin — Rule visibility JS: robust parsing for localized ticket cap; Ticket Number Max field placement next to LFW ticket prefix.
 
 = 1.0.15 =
 * Tooling — `release.sh` sets release commit author from repository `.git/config` (local), then global Git config, with existing defaults only as fallback.

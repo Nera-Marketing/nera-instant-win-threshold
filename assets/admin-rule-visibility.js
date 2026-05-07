@@ -100,12 +100,21 @@
 			if (typeof e.stopImmediatePropagation === 'function') {
 				e.stopImmediatePropagation();
 			}
-			var msg =
-				typeof window.neraIwtAdmin !== 'undefined' &&
-				window.neraIwtAdmin &&
-				window.neraIwtAdmin.sequentialTicketConflictMsg
-					? window.neraIwtAdmin.sequentialTicketConflictMsg
-					: 'Change Ticket Number Pattern from Sequential before using this Rule Type.';
+			var admin = window.neraIwtAdmin;
+			var msg = '';
+			if (admin) {
+				if (ruleType === 'schedule' && admin.sequentialTicketConflictMsgSchedule) {
+					msg = admin.sequentialTicketConflictMsgSchedule;
+				} else if (ruleType === 'ticket_pct' && admin.sequentialTicketConflictMsgTicketPct) {
+					msg = admin.sequentialTicketConflictMsgTicketPct;
+				}
+			}
+			if (!msg) {
+				msg =
+					admin && admin.sequentialTicketConflictMsgTicketPct
+						? admin.sequentialTicketConflictMsgTicketPct
+						: 'Change Ticket Number Pattern from Sequential before using this Rule Type.';
+			}
 			window.alert(msg);
 		},
 		true
@@ -159,12 +168,17 @@
 	 * @return {number}
 	 */
 	function neraIwtDomTicketRangeMax() {
-		var cap =
-			typeof window.neraIwtAdmin !== 'undefined' &&
-			window.neraIwtAdmin &&
-			typeof window.neraIwtAdmin.maxTicketNumberCap === 'number'
-				? window.neraIwtAdmin.maxTicketNumberCap
-				: 0;
+		// wp_localize_script casts every scalar to string before JSON encode, so cap is often "999" not 999.
+		var cap = 0;
+		if (typeof window.neraIwtAdmin !== 'undefined' && window.neraIwtAdmin) {
+			var rawCap = window.neraIwtAdmin.maxTicketNumberCap;
+			if (rawCap !== undefined && rawCap !== null && rawCap !== '') {
+				var parsedCap = parseInt(String(rawCap), 10);
+				if (!isNaN(parsedCap) && parsedCap > 0) {
+					cap = parsedCap;
+				}
+			}
+		}
 		var start = neraIwtDomEffectiveTicketStart();
 		var mtEl = document.getElementById('_lty_maximum_tickets');
 		var mt = mtEl ? parseInt(String(mtEl.value || '1'), 10) : 1;
@@ -694,14 +708,64 @@
 
 	$(document).on(
 		'change select2:select',
-		'#_lty_ticket_number_type, #_lty_tickets_per_tab_display_type, #_lty_ticket_generation_type',
+		'#_lty_ticket_number_type, #_lty_tickets_per_tab_display_type',
 		function () {
 			neraIwtMaybeClearInstantWinnersUnsavedAfterTicketPatternFix();
 		}
 	);
 
+	$(document).on('change select2:select', '#_lty_ticket_generation_type', function () {
+		var $el = $(this);
+		var admin = window.neraIwtAdmin;
+		var v = String($el.val() || '');
+		var prev = String($el.attr('data-nera-iwt-prev-gen') || '');
+		if (prev === '1' && v !== '1' && admin) {
+			var hasConflict = parseInt(String(admin.productHasPctOrScheduleRules || '0'), 10) === 1;
+			if (hasConflict) {
+				window.alert(String(admin.ticketGenConflictMsg || ''));
+				$el.val('1');
+				return;
+			}
+		}
+		$el.attr('data-nera-iwt-prev-gen', v);
+		neraIwtMaybeClearInstantWinnersUnsavedAfterTicketPatternFix();
+	});
+
+	function neraIwtRelocateTicketMaxField() {
+		var $mount = $('#nera-iwt-ticket-max-field-mount');
+		var $prefix = $('#_lty_ticket_prefix').closest('.form-field');
+		if ($mount.length && $prefix.length) {
+			$mount.children().insertBefore($prefix);
+			$mount.remove();
+		}
+	}
+
+	function neraIwtAppendInstantWinTicketNote() {
+		var admin = window.neraIwtAdmin;
+		if (!admin || !admin.instantWinTicketRangeNote) {
+			return;
+		}
+		var $w = $('.lty-instant-winner-rules-note-wrapper');
+		if (!$w.length || $w.find('.nera-iwt-instant-win-ticket-range-note').length) {
+			return;
+		}
+		$w.append(
+			$('<p></p>')
+				.addClass('nera-iwt-instant-win-ticket-range-note')
+				.text('* ' + String(admin.instantWinTicketRangeNote))
+		);
+	}
+
 	$(function () {
 		neraIwtResetTicketPatternSequentialBaseline();
+		$('#_lty_ticket_generation_type').each(function () {
+			var $g = $(this);
+			if ($g.attr('data-nera-iwt-prev-gen') === undefined) {
+				$g.attr('data-nera-iwt-prev-gen', String($g.val() || ''));
+			}
+		});
+		neraIwtRelocateTicketMaxField();
+		neraIwtAppendInstantWinTicketNote();
 		movePopupFieldsToTop();
 		scheduleColumnReorder();
 		refreshAll();

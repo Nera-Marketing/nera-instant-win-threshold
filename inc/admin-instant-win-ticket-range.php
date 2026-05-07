@@ -2,7 +2,7 @@
 /**
  * Instant-win rule: Ticket Number must fall within the lottery product’s numeric ticket pool.
  *
- * When NERA_IWT_MAX_TICKET_NUMBER > 0 the upper bound is that constant; otherwise it matches
+ * When {@see nera_iwt_get_configured_ticket_pool_max()} > 0 the upper bound is that cap (product meta or constant); otherwise it matches
  * Lottery for WooCommerce: effective starting number through starting + maximum tickets − 1.
  *
  * @package Nera_Instant_Win_Threshold
@@ -43,8 +43,9 @@ function nera_iwt_get_effective_ticket_start_for_validation( $product ) {
 function nera_iwt_get_instant_win_ticket_upper_bound( $product ) {
 	$start = nera_iwt_get_effective_ticket_start_for_validation( $product );
 
-	if ( defined( 'NERA_IWT_MAX_TICKET_NUMBER' ) && NERA_IWT_MAX_TICKET_NUMBER > 0 ) {
-		return max( $start, (int) NERA_IWT_MAX_TICKET_NUMBER );
+	$cap = function_exists( 'nera_iwt_get_configured_ticket_pool_max' ) ? nera_iwt_get_configured_ticket_pool_max( $product ) : 0;
+	if ( $cap > 0 ) {
+		return max( $start, $cap );
 	}
 
 	$max_tickets = 0;

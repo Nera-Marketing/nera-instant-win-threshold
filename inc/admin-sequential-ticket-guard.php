@@ -59,12 +59,26 @@ function nera_iwt_rule_type_requires_random_or_shuffled_tickets( $type ) {
 }
 
 /**
- * Admin-facing error when Sequential tickets clash with schedule / ticket-% rules.
+ * Admin-facing error when Sequential tickets clash with Schedule / Ticket-% prize rules.
  *
+ * Copy mentioning Schedule Prize is omitted when {@see nera_iwt_is_schedule_prize_type_enabled()} is false,
+ * except when the conflicting rule type is {@see NERA_IWT_RULE_TYPE_SCHEDULE} (legacy row).
+ *
+ * @param string $conflict_rule_type Rule slug being saved (`schedule` or `ticket_pct`).
  * @return string
  */
-function nera_iwt_message_sequential_ticket_pattern_conflict() {
-	return __( 'This product uses Ticket Number Pattern “Sequential” (automatic tickets). Scheduled prizes and Ticket Sold % prizes need ticket numbers that are not issued in strict purchase order. Change Ticket Number Pattern to Random or Shuffled in the product Lottery data, then save again.', 'nera-instant-win-threshold' );
+function nera_iwt_message_sequential_ticket_pattern_conflict( $conflict_rule_type ) {
+	$conflict_rule_type = sanitize_key( (string) $conflict_rule_type );
+
+	if ( NERA_IWT_RULE_TYPE_SCHEDULE === $conflict_rule_type ) {
+		return __( 'This product uses Ticket Number Pattern “Sequential” (automatic tickets). Schedule Prize rules need ticket numbers that are not issued in strict purchase order. Change Ticket Number Pattern to Random or Shuffled in the product Lottery data, then save again.', 'nera-instant-win-threshold' );
+	}
+
+	if ( nera_iwt_is_schedule_prize_type_enabled() ) {
+		return __( 'This product uses Ticket Number Pattern “Sequential” (automatic tickets). Scheduled prizes and Ticket Sold % prizes need ticket numbers that are not issued in strict purchase order. Change Ticket Number Pattern to Random or Shuffled in the product Lottery data, then save again.', 'nera-instant-win-threshold' );
+	}
+
+	return __( 'This product uses Ticket Number Pattern “Sequential” (automatic tickets). Ticket Sold % prizes need ticket numbers that are not issued in strict purchase order. Change Ticket Number Pattern to Random or Shuffled in the product Lottery data, then save again.', 'nera-instant-win-threshold' );
 }
 
 /**
@@ -95,9 +109,12 @@ function nera_iwt_ajax_validate_add_rule_sequential_ticket_pattern() {
 	if ( ! in_array( $type, nera_iwt_public_rule_type_slugs(), true ) ) {
 		$type = NERA_IWT_RULE_TYPE_INSTANT;
 	}
+	if ( NERA_IWT_RULE_TYPE_SCHEDULE === $type && ! nera_iwt_is_schedule_prize_type_enabled() ) {
+		$type = NERA_IWT_RULE_TYPE_INSTANT;
+	}
 
 	if ( nera_iwt_rule_type_requires_random_or_shuffled_tickets( $type ) ) {
-		wp_send_json_error( array( 'error' => nera_iwt_message_sequential_ticket_pattern_conflict() ) );
+		wp_send_json_error( array( 'error' => nera_iwt_message_sequential_ticket_pattern_conflict( $type ) ) );
 	}
 }
 
@@ -142,9 +159,15 @@ function nera_iwt_ajax_validate_bulk_save_sequential_ticket_pattern() {
 				$type = NERA_IWT_RULE_TYPE_INSTANT;
 			}
 		}
+		if ( NERA_IWT_RULE_TYPE_SCHEDULE === $type && ! nera_iwt_is_schedule_prize_type_enabled() ) {
+			$prev = (string) get_post_meta( $rid, 'nera_iwt_public_rule_type', true );
+			if ( NERA_IWT_RULE_TYPE_SCHEDULE !== $prev ) {
+				$type = NERA_IWT_RULE_TYPE_INSTANT;
+			}
+		}
 
 		if ( nera_iwt_rule_type_requires_random_or_shuffled_tickets( $type ) ) {
-			wp_send_json_error( array( 'error' => nera_iwt_message_sequential_ticket_pattern_conflict() ) );
+			wp_send_json_error( array( 'error' => nera_iwt_message_sequential_ticket_pattern_conflict( $type ) ) );
 		}
 	}
 }

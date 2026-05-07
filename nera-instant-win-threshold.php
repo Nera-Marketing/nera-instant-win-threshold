@@ -3,7 +3,7 @@
  * Plugin Name: Nera – Instant Win Rules
  * Plugin URI: https://github.com/Nera-Marketing/nera-instant-win-threshold
  * Description: Instant win rule types (instant, scheduled, ticket sold %), public prize visibility, and optional instant-win UI overrides for Lottery for WooCommerce.
- * Version: 1.0.17
+ * Version: 1.0.18
  * Author: Nera
  * Text Domain: nera-instant-win-threshold
  * Requires at least: 6.0
@@ -16,20 +16,31 @@ defined( 'ABSPATH' ) || exit;
 
 use YahnisElsts\PluginUpdateChecker\v5p5\Vcs\GitHubApi;
 
-define( 'NERA_IWT_VERSION', '1.0.17' );
+define( 'NERA_IWT_VERSION', '1.0.18' );
 define( 'NERA_IWT_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'NERA_IWT_PLUGIN_FILE', __FILE__ );
 
 /**
  * Upper bound of the ticket-number pool for shuffle and random lottery products
- * when > 0: ticket numbers are drawn from  1 … NERA_IWT_MAX_TICKET_NUMBER.
+ * Fallback when a product has no Ticket Number Max meta: ticket numbers are drawn from  1 … NERA_IWT_MAX_TICKET_NUMBER.
+ * Prefer setting Ticket Number Max on each lottery product (Ticket Generation Settings).
  * When 0 or unset in wp-config (after removing the default below): falls back to
  * _lty_maximum_tickets + count( nera_iwt_get_unavailable_prize_ticket_numbers() ).
  * Override in wp-config.php:  define( 'NERA_IWT_MAX_TICKET_NUMBER', 49999 );
  * Use 0 for LFW-style cap + unavailable offset:  define( 'NERA_IWT_MAX_TICKET_NUMBER', 0 );
  */
 if ( ! defined( 'NERA_IWT_MAX_TICKET_NUMBER' ) ) {
-	define( 'NERA_IWT_MAX_TICKET_NUMBER', 0 );
+	define( 'NERA_IWT_MAX_TICKET_NUMBER', 999 );
+}
+
+/**
+ * When 1 (or true): “Schedule Prize” appears in the Rule type dropdown on instant-win rules.
+ * When 0 (default): that option is hidden. Existing rules already set to Schedule Prize remain
+ * editable until switched away; new rules cannot use the type while disabled.
+ * Override: define( 'NERA_IWT_ENABLE_SCHEDULE_PRIZE_TYPE', 1 ); in wp-config.php.
+ */
+if ( ! defined( 'NERA_IWT_ENABLE_SCHEDULE_PRIZE_TYPE' ) ) {
+	define( 'NERA_IWT_ENABLE_SCHEDULE_PRIZE_TYPE', 0 );
 }
 
 require_once NERA_IWT_PLUGIN_DIR . 'inc/upgrade-temp-backup-helper.php';
@@ -256,8 +267,10 @@ if ( ! nera_iwt_is_lfw_active() ) {
 require_once NERA_IWT_PLUGIN_DIR . 'inc/cache.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/theme-instant-wins-section-override.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/rule-public-display.php';
+require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-ticket-generation-rule-guard.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-sequential-ticket-guard.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-instant-win-ticket-range.php';
+require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-product-ticket-pool-max.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/visibility.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/rest-instant-wins.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/woocommerce-lottery-template-override.php';

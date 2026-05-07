@@ -47,6 +47,111 @@ function nera_iwt_public_rule_type_labels() {
 }
 
 /**
+ * Whether “Schedule Prize” is selectable in admin Rule type UI.
+ *
+ * @return bool
+ */
+function nera_iwt_is_schedule_prize_type_enabled() {
+	if ( ! defined( 'NERA_IWT_ENABLE_SCHEDULE_PRIZE_TYPE' ) ) {
+		return false;
+	}
+
+	$v = NERA_IWT_ENABLE_SCHEDULE_PRIZE_TYPE;
+
+	if ( true === $v ) {
+		return true;
+	}
+
+	return 1 === (int) $v;
+}
+
+/**
+ * Whether any instant-win rule for this lottery uses a given public rule type slug.
+ *
+ * @param int    $product_id Lottery product ID.
+ * @param string $type_slug  One of {@see nera_iwt_public_rule_type_slugs()}.
+ * @return bool
+ */
+function nera_iwt_product_has_instant_win_rule_of_public_type( $product_id, $type_slug ) {
+	$product_id = absint( $product_id );
+	$type_slug  = sanitize_key( (string) $type_slug );
+
+	if ( $product_id <= 0 || '' === $type_slug || ! function_exists( 'lty_get_instant_winner_rule_ids' ) ) {
+		return false;
+	}
+
+	$rule_ids = lty_get_instant_winner_rule_ids( $product_id );
+	if ( ! is_array( $rule_ids ) ) {
+		return false;
+	}
+
+	foreach ( $rule_ids as $rid ) {
+		$rid = absint( $rid );
+		if ( $rid <= 0 ) {
+			continue;
+		}
+		$t = (string) get_post_meta( $rid, 'nera_iwt_public_rule_type', true );
+		if ( $type_slug === $t ) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/**
+ * @param int $product_id Lottery product ID.
+ * @return bool
+ */
+function nera_iwt_product_has_schedule_public_rules( $product_id ) {
+	return nera_iwt_product_has_instant_win_rule_of_public_type( $product_id, NERA_IWT_RULE_TYPE_SCHEDULE );
+}
+
+/**
+ * @param int $product_id Lottery product ID.
+ * @return bool
+ */
+function nera_iwt_product_has_ticket_pct_public_rules( $product_id ) {
+	return nera_iwt_product_has_instant_win_rule_of_public_type( $product_id, NERA_IWT_RULE_TYPE_TICKET_PCT );
+}
+
+/**
+ * Labels for the Rule type dropdown: Schedule / Ticket % only when Ticket Generation Type is Automatic;
+ * still gated by {@see nera_iwt_is_schedule_prize_type_enabled()} for Schedule. Grandfathers the current
+ * row type when switching generation mode would otherwise hide the stored slug.
+ *
+ * @param string           $current_type Stored slug for this rule row (empty in Add Rule modal).
+ * @param WC_Product|null $product       Lottery product on the edit screen; null assumes Automatic-friendly options.
+ * @return array<string, string>
+ */
+function nera_iwt_public_rule_type_labels_for_admin_select( $current_type = '', $product = null ) {
+	$all          = nera_iwt_public_rule_type_labels();
+	$current_type = (string) $current_type;
+
+	$assume_auto = true;
+	if ( $product instanceof WC_Product && function_exists( 'nera_iwt_product_has_automatic_ticket_generation' ) ) {
+		$assume_auto = nera_iwt_product_has_automatic_ticket_generation( $product );
+	}
+
+	$show_advanced   = $assume_auto;
+	$show_ticket_pct = $show_advanced || NERA_IWT_RULE_TYPE_TICKET_PCT === $current_type;
+	$show_schedule   = ( $show_advanced && nera_iwt_is_schedule_prize_type_enabled() ) || NERA_IWT_RULE_TYPE_SCHEDULE === $current_type;
+
+	$out = array();
+	foreach ( $all as $slug => $label ) {
+		if ( NERA_IWT_RULE_TYPE_SCHEDULE === $slug && ! $show_schedule ) {
+			continue;
+		}
+		if ( NERA_IWT_RULE_TYPE_TICKET_PCT === $slug && ! $show_ticket_pct ) {
+			continue;
+		}
+		$out[ $slug ] = $label;
+	}
+
+	return $out;
+}
+
+/**
  * @param string $local Datetime-local fragment e.g. 2026-05-03T14:30.
  * @return string MySQL datetime UTC or empty.
  */
@@ -100,6 +205,28 @@ function nera_iwt_persist_rule_visibility_meta( $rule_id, array $row ) {
 	$type = sanitize_key( (string) $row['nera_public_rule_type'] );
 	if ( ! in_array( $type, nera_iwt_public_rule_type_slugs(), true ) ) {
 		$type = NERA_IWT_RULE_TYPE_INSTANT;
+	}
+
+	if ( NERA_IWT_RULE_TYPE_SCHEDULE === $type && ! nera_iwt_is_schedule_prize_type_enabled() ) {
+		$prev = (string) get_post_meta( $rule_id, 'nera_iwt_public_rule_type', true );
+		if ( NERA_IWT_RULE_TYPE_SCHEDULE !== $prev ) {
+			$type = NERA_IWT_RULE_TYPE_INSTANT;
+		}
+	}
+
+	$lottery_id = absint( get_post_meta( $rule_id, 'lty_lottery_id', true ) );
+	$product    = $lottery_id > 0 ? wc_get_product( $lottery_id ) : null;
+
+	if (
+		( NERA_IWT_RULE_TYPE_TICKET_PCT === $type || NERA_IWT_RULE_TYPE_SCHEDULE === $type )
+		&& $product instanceof WC_Product
+		&& function_exists( 'nera_iwt_product_has_automatic_ticket_generation' )
+		&& ! nera_iwt_product_has_automatic_ticket_generation( $product )
+	) {
+		$prev_type = (string) get_post_meta( $rule_id, 'nera_iwt_public_rule_type', true );
+		if ( $type !== $prev_type ) {
+			$type = NERA_IWT_RULE_TYPE_INSTANT;
+		}
 	}
 
 	update_post_meta( $rule_id, 'nera_iwt_public_rule_type', $type );
@@ -652,17 +779,48 @@ function nera_iwt_sync_visibility_meta_to_log( $post_id, $post ) {
 add_action( 'save_post_lty_ins_winner_log', 'nera_iwt_sync_visibility_meta_to_log', 15, 2 );
 
 /**
+ * Help tip copy for the Rule type column (depends on schedule flag + ticket generation type).
+ *
+ * @param WP_Post|null $post Current admin post.
+ * @return string
+ */
+function nera_iwt_admin_rule_type_column_help_tip_text( $post ) {
+	$product = ( $post instanceof WP_Post && 'product' === $post->post_type ) ? wc_get_product( $post->ID ) : null;
+
+	if (
+		$product instanceof WC_Product
+		&& function_exists( 'lty_is_lottery_product' )
+		&& lty_is_lottery_product( $product )
+		&& function_exists( 'nera_iwt_product_has_automatic_ticket_generation' )
+		&& ! nera_iwt_product_has_automatic_ticket_generation( $product )
+	) {
+		$pid             = (int) $product->get_id();
+		$mention_schedule = nera_iwt_is_schedule_prize_type_enabled() || nera_iwt_product_has_schedule_public_rules( $pid );
+		if ( $mention_schedule ) {
+			return __( 'Controls when this prize appears on the public product page. With Ticket Generation Type set to User Chooses the Ticket, only Instant Prize is available here. Switch Ticket Generation Type to Automatic to use Ticket Sold Percentage or Schedule prizes.', 'nera-instant-win-threshold' );
+		}
+
+		return __( 'Controls when this prize appears on the public product page. With Ticket Generation Type set to User Chooses the Ticket, only Instant Prize is available here. Switch Ticket Generation Type to Automatic to use Ticket Sold Percentage prizes.', 'nera-instant-win-threshold' );
+	}
+
+	if ( nera_iwt_is_schedule_prize_type_enabled() ) {
+		return __( 'Controls when this prize appears on the public product page. Instant = always. Schedule = after a date/time. Ticket % = when sold tickets reach the configured percentage.', 'nera-instant-win-threshold' );
+	}
+
+	return __( 'Controls when this prize appears on the public product page. Instant = always. Ticket % = when sold tickets reach the configured percentage. (Schedule Prize is disabled via NERA_IWT_ENABLE_SCHEDULE_PRIZE_TYPE.)', 'nera-instant-win-threshold' );
+}
+
+/**
  * Admin: table header — Rule type.
  */
 function nera_iwt_admin_rule_column_header() {
+	global $post;
 	?>
 	<th class="nera-iwt-public-rule-type-column">
 		<b><?php esc_html_e( 'Rule type', 'nera-instant-win-threshold' ); ?></b>
 		<?php
 		echo wp_kses_post(
-			wc_help_tip(
-				__( 'Controls when this prize appears on the public product page. Instant = always. Schedule = after a date/time. Ticket % = when sold tickets reach the configured percentage.', 'nera-instant-win-threshold' )
-			)
+			wc_help_tip( nera_iwt_admin_rule_type_column_help_tip_text( $post ) )
 		);
 		?>
 	</th>
@@ -681,6 +839,8 @@ function nera_iwt_admin_rule_column_cell( $instant_winner ) {
 		return;
 	}
 
+	global $post;
+
 	$rule_id     = (int) $instant_winner->get_id();
 	$type        = get_post_meta( $rule_id, 'nera_iwt_public_rule_type', true );
 	$type        = in_array( (string) $type, nera_iwt_public_rule_type_slugs(), true ) ? (string) $type : NERA_IWT_RULE_TYPE_INSTANT;
@@ -690,7 +850,12 @@ function nera_iwt_admin_rule_column_cell( $instant_winner ) {
 	$sched_local   = nera_iwt_schedule_gmt_to_local_input( $sched_gmt );
 	$sched_end_local = nera_iwt_schedule_gmt_to_local_input( $sched_end_gmt );
 
-	$labels = nera_iwt_public_rule_type_labels();
+	$product = ( $post instanceof WP_Post && 'product' === $post->post_type ) ? wc_get_product( $post->ID ) : null;
+	if ( ! $product instanceof WC_Product || ! function_exists( 'lty_is_lottery_product' ) || ! lty_is_lottery_product( $product ) ) {
+		$product = null;
+	}
+
+	$labels = nera_iwt_public_rule_type_labels_for_admin_select( $type, $product );
 	?>
 	<td class="nera-iwt-public-rule-type-column">
 		<div class="nera-iwt-rule-visibility-fields nera-iwt-rule-visibility-table-fields">
@@ -764,7 +929,14 @@ add_action( 'lty_instant_winner_rule_column_data', 'nera_iwt_admin_rule_column_c
  * Admin: “Add rule” popup fields (moved to top of modal via JS).
  */
 function nera_iwt_admin_popup_fields() {
-	$labels = nera_iwt_public_rule_type_labels();
+	global $post;
+
+	$product = ( $post instanceof WP_Post && 'product' === $post->post_type ) ? wc_get_product( $post->ID ) : null;
+	if ( ! $product instanceof WC_Product || ! function_exists( 'lty_is_lottery_product' ) || ! lty_is_lottery_product( $product ) ) {
+		$product = null;
+	}
+
+	$labels = nera_iwt_public_rule_type_labels_for_admin_select( '', $product );
 	?>
 	<div class="nera-iwt-rule-visibility-popup-fields nera-iwt-rule-visibility-fields lty-instant-winner-rule-column">
 		<p class="nera-iwt-popup-field-row">
@@ -842,16 +1014,54 @@ function nera_iwt_admin_enqueue_rule_visibility( $hook_suffix ) {
 		true
 	);
 
+	$product      = wc_get_product( $post->ID );
+	$is_lottery   = $product instanceof WC_Product && function_exists( 'lty_is_lottery_product' ) && lty_is_lottery_product( $product );
+	$product_id   = $is_lottery ? (int) $product->get_id() : 0;
+	$cap_js       = 0;
+	if ( $is_lottery && function_exists( 'nera_iwt_get_configured_ticket_pool_max' ) ) {
+		$cap_js = (int) nera_iwt_get_configured_ticket_pool_max( $product );
+	}
+
+	$l10n_package = array(
+		'sequentialTicketConflictMsgSchedule' => nera_iwt_message_sequential_ticket_pattern_conflict( NERA_IWT_RULE_TYPE_SCHEDULE ),
+		'sequentialTicketConflictMsgTicketPct' => nera_iwt_message_sequential_ticket_pattern_conflict( NERA_IWT_RULE_TYPE_TICKET_PCT ),
+		'maxTicketNumberCap'          => $cap_js > 0 ? $cap_js : 0,
+		'ticketRangeInvalidMsg'       => __( 'Ticket Number must be between {min} and {max} (inclusive).', 'nera-instant-win-threshold' ),
+		'schedulePrizeTypeEnabled'    => nera_iwt_is_schedule_prize_type_enabled() ? 1 : 0,
+		'productHasPctOrScheduleRules' => 0,
+		'productTicketGenerationIsAutomatic' => 0,
+		'ticketGenConflictMsg'        => '',
+		'instantWinTicketRangeNote'   => '',
+	);
+
+	if ( $is_lottery && function_exists( 'nera_iwt_get_effective_ticket_start_for_validation' ) && function_exists( 'nera_iwt_get_instant_win_ticket_upper_bound' ) ) {
+		$pool_min = nera_iwt_get_effective_ticket_start_for_validation( $product );
+		$pool_max = nera_iwt_get_instant_win_ticket_upper_bound( $product );
+		if ( $pool_max < $pool_min ) {
+			$pool_max = $pool_min;
+		}
+		$l10n_package['instantWinTicketRangeNote'] = sprintf(
+			/* translators: 1: minimum numeric ticket, 2: maximum numeric ticket */
+			__( 'Numeric instant-win ticket numbers must fall within the ticket pool for this product (from the effective Ticket Starting Number through Ticket Number Max in Ticket Generation Settings). If Ticket Number Max is empty, the site fallback or Lottery ticket cap applies. Current allowed numeric range for this product: %1$d–%2$d (inclusive).', 'nera-instant-win-threshold' ),
+			$pool_min,
+			$pool_max
+		);
+	}
+
+	if ( $is_lottery && function_exists( 'nera_iwt_product_has_ticket_pct_or_schedule_rules' ) ) {
+		$l10n_package['productHasPctOrScheduleRules'] = nera_iwt_product_has_ticket_pct_or_schedule_rules( $product_id ) ? 1 : 0;
+	}
+	if ( $is_lottery && function_exists( 'nera_iwt_product_has_automatic_ticket_generation' ) ) {
+		$l10n_package['productTicketGenerationIsAutomatic'] = nera_iwt_product_has_automatic_ticket_generation( $product ) ? 1 : 0;
+	}
+	if ( function_exists( 'nera_iwt_message_ticket_generation_conflict_rules' ) ) {
+		$l10n_package['ticketGenConflictMsg'] = nera_iwt_message_ticket_generation_conflict_rules( $product_id );
+	}
+
 	wp_localize_script(
 		'nera-iwt-admin-rule-visibility',
 		'neraIwtAdmin',
-		array(
-			'sequentialTicketConflictMsg' => nera_iwt_message_sequential_ticket_pattern_conflict(),
-			'maxTicketNumberCap'          => ( defined( 'NERA_IWT_MAX_TICKET_NUMBER' ) && NERA_IWT_MAX_TICKET_NUMBER > 0 )
-				? (int) NERA_IWT_MAX_TICKET_NUMBER
-				: 0,
-			'ticketRangeInvalidMsg'       => __( 'Ticket Number must be between {min} and {max} (inclusive).', 'nera-instant-win-threshold' ),
-		)
+		$l10n_package
 	);
 }
 
