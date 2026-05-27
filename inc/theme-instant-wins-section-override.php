@@ -7,8 +7,9 @@
  * the theme include in {@see 'wp_before_load_template'} / {@see 'wp_after_load_template'}
  * and replace it with {@see NERA_IWT_PLUGIN_DIR} . 'templates/instant-wins-section.php'.
  *
- * The main instant-win block still uses {@see 'nera_competitions_instant_win_prizes_section_html'};
- * this bridge covers any other `get_template_part( ... instant-wins-section )` calls.
+ * Primary public integration: {@see nera_competitions_render_instant_win_prizes_section()} loads
+ * the theme wrapper and calls `get_template_part( ... instant-wins-section )`, which this bridge
+ * redirects to the plugin copy of the inner template.
  *
  * @package Nera_Instant_Win_Threshold
  */

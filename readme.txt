@@ -4,7 +4,7 @@ Tags: woocommerce, lottery, instant win, competition, giveaway
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.0.18
+Stable tag: 1.0.19
 License: GPLv2 or later
 
 Instant win rule types, public prize visibility, and optional instant-win UI overrides for Lottery for WooCommerce.
@@ -26,6 +26,10 @@ This plugin extends **Lottery for WooCommerce** (Giveaway for WooCommerce) with:
 3. Configure instant win rules and visibility on competition products as supported by your theme and Lottery for WooCommerce.
 
 == Changelog ==
+
+= 1.0.19 =
+* Public — Drop duplicate section wrapper; theme `nera_competitions_render_instant_win_prizes_section()` owns layout; plugin supplies inner template via template-part bridge only.
+* Removed `instant-win-prizes-below-hero.php` and `nera_competitions_instant_win_prizes_section_html` filter.
 
 = 1.0.18 =
 * Admin — Per-product Ticket Number Max (Ticket Generation Settings) drives numeric ticket pool upper bound with site/LFW fallbacks; instant-win validation and helpers aligned (`ticket-generation-override`, `admin-instant-win-ticket-range`).

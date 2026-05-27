@@ -2,16 +2,17 @@
 /**
  * Instant Wins Section — canonical template (toggle + #instant-wins-root for theme Vue bundle).
  *
- * Overrides the theme file `template-parts/single-product/instant-wins-section.php` at plugin level
- * via {@see nera_iwt_wp_before_load_instant_wins_section()} / {@see nera_iwt_wp_after_load_instant_wins_section()}
- * and via {@see 'nera_competitions_instant_win_prizes_section_html'} (see instant-win-prizes-below-hero.php).
+ * Replaces the theme file `template-parts/single-product/instant-wins-section.php` when the theme
+ * calls {@see get_template_part()} via {@see nera_iwt_wp_before_load_instant_wins_section()} /
+ * {@see nera_iwt_wp_after_load_instant_wins_section()} (see theme-instant-wins-section-override.php).
+ * Section/container markup comes from {@see nera_competitions_render_instant_win_prizes_section()}.
  *
  * Header counts align with the REST payload after fetch via {@see nera_iwt_enqueue_public_assets()}
  * (plugin script syncs toggle badges from full CMS prize list).
  *
  * @package Nera_Instant_Win_Threshold
  *
- * @var array $args Must include key `product` (WC_Product), set by instant-win-prizes-below-hero.php or get_template_part().
+ * @var array $args Must include key `product` (WC_Product), from get_template_part().
  */
 
 defined( 'ABSPATH' ) || exit;

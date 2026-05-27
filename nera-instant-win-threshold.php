@@ -3,7 +3,7 @@
  * Plugin Name: Nera – Instant Win Rules
  * Plugin URI: https://github.com/Nera-Marketing/nera-instant-win-threshold
  * Description: Instant win rule types (instant, scheduled, ticket sold %), public prize visibility, and optional instant-win UI overrides for Lottery for WooCommerce.
- * Version: 1.0.18
+ * Version: 1.0.19
  * Author: Nera
  * Text Domain: nera-instant-win-threshold
  * Requires at least: 6.0
@@ -16,7 +16,7 @@ defined( 'ABSPATH' ) || exit;
 
 use YahnisElsts\PluginUpdateChecker\v5p5\Vcs\GitHubApi;
 
-define( 'NERA_IWT_VERSION', '1.0.18' );
+define( 'NERA_IWT_VERSION', '1.0.19' );
 define( 'NERA_IWT_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'NERA_IWT_PLUGIN_FILE', __FILE__ );
 
@@ -377,36 +377,11 @@ function nera_iwt_ensure_gen_mu_shim() {
 add_action( 'plugins_loaded', 'nera_iwt_ensure_gen_mu_shim', 1 );
 
 // ---------------------------------------------------------------------------
-// PUBLIC — Instant Win section below hero (theme filter override)
+// PUBLIC — Instant Win section (inner template via theme-instant-wins-section-override.php)
 // ---------------------------------------------------------------------------
 
 /**
- * Replace theme default instant-win block with plugin-maintained templates.
- *
- * @param string|null $html    Prior value (always null from theme).
- * @param WC_Product  $product Current product.
- * @return string|null Full section HTML, or null if templates missing (theme fallback).
- */
-function nera_iwt_filter_instant_win_prizes_section( $html, $product ) {
-	if ( ! $product instanceof WC_Product ) {
-		return $html;
-	}
-
-	$path = NERA_IWT_PLUGIN_DIR . 'templates/instant-win-prizes-below-hero.php';
-	if ( ! is_readable( $path ) ) {
-		return $html;
-	}
-
-	ob_start();
-	// phpcs:ignore WordPressVIPMinimum.Files.IncludingFile.UsingVariable -- plugin template path.
-	include $path;
-	return ob_get_clean();
-}
-
-add_filter( 'nera_competitions_instant_win_prizes_section_html', 'nera_iwt_filter_instant_win_prizes_section', 10, 2 );
-
-/**
- * Front assets for plugin-rendered instant-win section.
+ * Front assets for plugin instant-win section inner template.
  *
  * CSS  — badge row height tweaks.
  * JS   — syncs instant-wins REST response stats into the collapsible header counts.
