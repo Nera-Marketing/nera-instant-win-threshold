@@ -45,8 +45,10 @@
  *     https://YOUR-SITE/wp-admin/admin-post.php?action=nera_iwt_fix_ticket_19984
  *   The dry-run page prints a one-click APPLY URL (carries a WP nonce). The
  *   URL endpoint enforces is_user_logged_in() + current_user_can('manage_options')
- *   and (for apply mode) wp_verify_nonce(). See the companion mu-plugin at
- *   wp-content/mu-plugins/nera-iwt-fix-ticket-19984.php.
+ *   and (for apply mode) wp_verify_nonce(). Copy the companion mu-plugin from
+ *   scripts/nera-iwt-fix-ticket-19984-loader.php to
+ *   wp-content/mu-plugins/nera-iwt-fix-ticket-19984.php — if this script file
+ *   is not deployed, the loader exits quietly (no fatal on other sites).
  *
  * Safe to re-run: dry-run is the default. Apply mode is idempotent — once the
  * ticket no longer holds 49994 the function aborts with a clear message.
