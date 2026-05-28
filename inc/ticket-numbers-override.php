@@ -293,18 +293,30 @@ function nera_iwt_sync_prize_hold_tickets( $product ) {
 
 // ---------------------------------------------------------------------------
 // CHECKOUT HOOK — sync before LFW assigns tickets (priority 1 < LFW's 10)
+//
+// LFW registers create_ticket_on_placing_order on BOTH the classic checkout
+// (`woocommerce_checkout_update_order_meta`) and the block-based Store API
+// (`woocommerce_store_api_checkout_order_processed`). We must mirror both,
+// otherwise orders placed through the Cart/Checkout blocks (or any payment
+// gateway that uses the Store API, e.g. woo-wallet) generate tickets without
+// the hold posts being in place — held prize ticket numbers can then be
+// assigned to buyers.
+//
+// Both hooks pass an order *object* (block API) or an order *ID* (classic);
+// wc_get_order() accepts either, so a single handler covers both.
 // ---------------------------------------------------------------------------
 
 /**
  * Sync hold tickets for every lottery item in the order before LFW's
- * create_ticket_on_placing_order runs (woocommerce_checkout_update_order_meta @ 10).
+ * create_ticket_on_placing_order runs.
  *
- * @param int $order_id WooCommerce order ID.
+ * @param int|WC_Order $order_or_id WooCommerce order ID (classic checkout) or
+ *                                  WC_Order object (Store API block checkout).
  * @return void
  */
-function nera_iwt_sync_hold_before_lfw( $order_id ) {
+function nera_iwt_sync_hold_before_lfw( $order_or_id ) {
 
-	$order = wc_get_order( $order_id );
+	$order = wc_get_order( $order_or_id );
 	if ( ! $order ) {
 		return;
 	}
@@ -319,6 +331,7 @@ function nera_iwt_sync_hold_before_lfw( $order_id ) {
 	}
 }
 add_action( 'woocommerce_checkout_update_order_meta', 'nera_iwt_sync_hold_before_lfw', 1 );
+add_action( 'woocommerce_store_api_checkout_order_processed', 'nera_iwt_sync_hold_before_lfw', 1 );
 
 // ---------------------------------------------------------------------------
 // CRON — periodic sync to release prizes that became available without a
