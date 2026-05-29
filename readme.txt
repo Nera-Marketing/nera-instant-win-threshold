@@ -29,6 +29,7 @@ This plugin extends **Lottery for WooCommerce** (Giveaway for WooCommerce) with:
 
 = 1.0.21 =
 * Scripts — Ship `scripts/fix-ticket-19984.php` (one-off WP-CLI / admin-post remediation for a held prize number assigned before the v1.0.20 Store API checkout fix) and `scripts/nera-iwt-fix-ticket-19984-loader.php` (mu-plugin loader that skips quietly when the remediation script is not deployed).
+* Admin — Instant Win rules table: search/filter rows by ticket number, prize message, or prize group (persists across pagination).
 
 = 1.0.20 =
 * Fix — Sync prize hold tickets on block checkout / Store API (`woocommerce_store_api_checkout_order_processed`) as well as classic checkout, so held instant-win ticket numbers are not assigned when orders use Cart/Checkout blocks or Store API gateways (e.g. woo-wallet).

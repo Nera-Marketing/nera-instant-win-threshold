@@ -756,6 +756,120 @@
 		);
 	}
 
+	// ── Prize search ──────────────────────────────────────────────────────────
+
+	/** Currently active search term (persists across pagination page changes). */
+	var neraIwtPrizeSearchTerm = '';
+
+	/**
+	 * Inject the search UI after the Save button inside the bulk-actions wrapper.
+	 * Idempotent: skips if already injected.
+	 */
+	function neraIwtInjectPrizeSearchUI() {
+		var $wrapper = $('.lty-instant-winners-rules-bulk-actions-wrapper');
+		if (!$wrapper.length || $wrapper.find('.nera-iwt-prize-search-wrap').length) {
+			return;
+		}
+		var $ui = $(
+			'<span class="nera-iwt-prize-search-wrap">' +
+				'<input type="text" class="nera-iwt-prize-search" placeholder="Search ticket or prize…" />' +
+				'<button type="button" class="nera-iwt-prize-search-clear" title="Clear search" aria-label="Clear search">&#x2715;</button>' +
+			'</span>' +
+			'<span class="nera-iwt-prize-search-count"></span>'
+		);
+		$wrapper.find('.lty-save-instant-winners-rules').after($ui);
+
+		// Restore term if page was changed while a search was active.
+		if (neraIwtPrizeSearchTerm) {
+			$wrapper.find('.nera-iwt-prize-search').val(neraIwtPrizeSearchTerm);
+			neraIwtApplyPrizeFilter(neraIwtPrizeSearchTerm);
+		}
+	}
+
+	/**
+	 * Filter visible rows in the rules table by the given term.
+	 * Matches against rule ID or prize message textarea content.
+	 *
+	 * @param {string} term
+	 */
+	function neraIwtApplyPrizeFilter(term) {
+		var $table = $('.lty-instant-winners-rules-contents');
+		if (!$table.length) {
+			return;
+		}
+		var $rows = $table.find('tbody tr');
+		var total = $rows.length;
+
+		if (!term) {
+			$rows.show();
+			neraIwtUpdatePrizeSearchCount(0, 0, false);
+			$('.nera-iwt-prize-search-clear').hide();
+			return;
+		}
+
+		var lc = term.toLowerCase();
+		var matched = 0;
+
+		$rows.each(function () {
+			var $tr = $(this);
+			var ticket  = String($tr.find('.lty-ticket-number').val() || '').toLowerCase();
+			var message = String($tr.find('.lty-instant-winner-prize-message').val() || '').toLowerCase();
+			var group   = String($tr.find('.lty-instant-winner-prize-group-id option:selected').text() || '').toLowerCase();
+			var show = ticket.indexOf(lc) !== -1 || message.indexOf(lc) !== -1 || group.indexOf(lc) !== -1;
+			$tr.toggle(show);
+			if (show) {
+				matched++;
+			}
+		});
+
+		neraIwtUpdatePrizeSearchCount(matched, total, true);
+		$('.nera-iwt-prize-search-clear').show();
+	}
+
+	/**
+	 * Update the result count badge beside the search input.
+	 *
+	 * @param {number}  matched
+	 * @param {number}  total
+	 * @param {boolean} active
+	 */
+	function neraIwtUpdatePrizeSearchCount(matched, total, active) {
+		var $count = $('.nera-iwt-prize-search-count');
+		if (!active) {
+			$count.text('').hide();
+			return;
+		}
+		$count.text(matched + ' / ' + total).show();
+	}
+
+	// Debounce helper.
+	var neraIwtSearchTimer = null;
+
+	$(document).on('input', '.nera-iwt-prize-search', function () {
+		var term = String($(this).val() || '').trim();
+		neraIwtPrizeSearchTerm = term;
+		if (neraIwtSearchTimer) {
+			clearTimeout(neraIwtSearchTimer);
+		}
+		neraIwtSearchTimer = setTimeout(function () {
+			neraIwtApplyPrizeFilter(neraIwtPrizeSearchTerm);
+			if (neraIwtPrizeSearchTerm) {
+				$('.nera-iwt-prize-search-clear').show();
+			} else {
+				$('.nera-iwt-prize-search-clear').hide();
+			}
+		}, 200);
+	});
+
+	$(document).on('click', '.nera-iwt-prize-search-clear', function () {
+		neraIwtPrizeSearchTerm = '';
+		$('.nera-iwt-prize-search').val('');
+		neraIwtApplyPrizeFilter('');
+		$('.nera-iwt-prize-search-clear').hide();
+	});
+
+	// ── End prize search ───────────────────────────────────────────────────────
+
 	$(function () {
 		neraIwtResetTicketPatternSequentialBaseline();
 		$('#_lty_ticket_generation_type').each(function () {
@@ -770,6 +884,7 @@
 		scheduleColumnReorder();
 		refreshAll();
 		bindNeraIwtModalOpenHandlers();
+		neraIwtInjectPrizeSearchUI();
 	});
 
 	// Re-bind after Add New Rule link (modal node may have been replaced).
@@ -799,7 +914,7 @@
 	});
 
 	// Re-run after LFW replaces the rules table via pagination AJAX.
-	$(document).ajaxComplete(function (event, xhr, settings) {
+	$(document).ajaxComplete(function (_event, _xhr, settings) {
 		var d = settings.data;
 		var isPagination = false;
 		if (typeof d === 'string' && d.indexOf('action=lty_instant_winners_rules_pagination_content') !== -1) {
@@ -815,6 +930,10 @@
 			scheduleColumnReorder();
 			refreshAll();
 			bindNeraIwtModalOpenHandlers();
+			neraIwtInjectPrizeSearchUI();
+			if (neraIwtPrizeSearchTerm) {
+				neraIwtApplyPrizeFilter(neraIwtPrizeSearchTerm);
+			}
 		}, 0);
 	});
 
