@@ -40,6 +40,15 @@ function nera_iwt_get_configured_ticket_pool_max( $product ) {
 		}
 	}
 
+	// _nera_iwt_ticket_number_max not configured: default the pool ceiling to the
+	// product's own LFW maximum tickets so the pool always covers every buyer slot.
+	if ( is_object( $product ) && method_exists( $product, 'get_lty_maximum_tickets' ) ) {
+		$lty_max = absint( $product->get_lty_maximum_tickets() );
+		if ( $lty_max > 0 ) {
+			return $lty_max;
+		}
+	}
+
 	if ( defined( 'NERA_IWT_MAX_TICKET_NUMBER' ) && NERA_IWT_MAX_TICKET_NUMBER > 0 ) {
 		return max( 1, (int) NERA_IWT_MAX_TICKET_NUMBER );
 	}
@@ -56,9 +65,6 @@ function nera_iwt_get_configured_ticket_pool_max( $product ) {
 function nera_iwt_resolve_shuffle_random_pool_max( $product ) {
 
 	$configured = nera_iwt_get_configured_ticket_pool_max( $product );
-	if ( $configured > 0 ) {
-		return $configured;
-	}
 
 	$base = 1;
 	if ( is_object( $product ) && method_exists( $product, 'get_lty_maximum_tickets' ) ) {
@@ -73,7 +79,16 @@ function nera_iwt_resolve_shuffle_random_pool_max( $product ) {
 		}
 	}
 
-	return max( 1, $base + $extra );
+	$lfw_based = max( 1, $base + $extra );
+
+	if ( $configured > 0 ) {
+		// The configured cap sets the preferred pool ceiling but must never fall
+		// below the product's own maximum tickets — if it did, the pool would be
+		// exhausted before all buyer slots are filled, causing checkout errors.
+		return max( $configured, $lfw_based );
+	}
+
+	return $lfw_based;
 }
 
 // ---------------------------------------------------------------------------
