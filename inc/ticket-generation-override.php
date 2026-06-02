@@ -117,18 +117,20 @@ if ( ! function_exists( 'lty_get_random_ticket_numbers' ) ) {
 		$max      = nera_iwt_resolve_shuffle_random_pool_max( $product );
 		$quantity = max( 1, (int) $quantity );
 
-		$placed = is_object( $product ) && method_exists( $product, 'get_placed_tickets' )
-			? array_map( 'strval', (array) $product->get_placed_tickets() )
+		$placed_lookup = is_object( $product ) && method_exists( $product, 'get_placed_tickets' )
+			? array_flip( array_map( 'strval', (array) $product->get_placed_tickets() ) )
 			: array();
 
 		$ticket_numbers = array();
+		$picked         = array();
 		// Safety cap: avoids infinite loops when the pool is nearly exhausted.
 		$max_attempts = $quantity * 200;
 		$attempts     = 0;
 
 		while ( count( $ticket_numbers ) < $quantity && $attempts < $max_attempts ) {
 			$num = (string) mt_rand( 1, $max );
-			if ( ! in_array( $num, $ticket_numbers, true ) && ! in_array( $num, $placed, true ) ) {
+			if ( ! isset( $picked[ $num ] ) && ! isset( $placed_lookup[ $num ] ) ) {
+				$picked[ $num ]   = true;
 				$ticket_numbers[] = $num;
 			}
 			++$attempts;
@@ -151,10 +153,12 @@ if ( ! function_exists( 'lty_get_remaining_shuffle_ticket_numbers' ) ) {
 	 * Replaces LFW's default which builds its pool from the product's
 	 * get_formatted_shuffle_ticket_numbers() (capped at _lty_maximum_tickets).
 	 *
-	 * Note: range(1, 99999) produces ~100 k integers (~800 KB) in memory — fine
-	 * for typical competition traffic.  If performance becomes a concern, switch
-	 * to the random approach (pick candidates one-by-one) rather than materialising
-	 * the full pool.
+	 * Two strategies, chosen by pool size to avoid materialising a huge range:
+	 *   • Small pool (<= NERA_IWT_SHUFFLE_MATERIALIZE_MAX): build the full
+	 *     range, diff placed, shuffle, slice — exact even when nearly exhausted.
+	 *   • Large pool: rejection sampling (random picks). range(1, 999999) would
+	 *     allocate ~1M integers (~30 MB+) and shuffle them on EVERY checkout-loop
+	 *     iteration, which exhausts memory / CPU time and stalls checkout.
 	 *
 	 * @param WC_Product $product  Lottery product.
 	 * @param int        $quantity Number of ticket numbers to return.
@@ -169,16 +173,37 @@ if ( ! function_exists( 'lty_get_remaining_shuffle_ticket_numbers' ) ) {
 			? array_map( 'intval', (array) $product->get_placed_tickets() )
 			: array();
 
-		// Build the available pool as integers, then shuffle.
-		$pool = array_values( array_diff( range( 1, $max ), $placed ) );
+		// Threshold above which we never materialise the full range in memory.
+		$materialize_max = defined( 'NERA_IWT_SHUFFLE_MATERIALIZE_MAX' )
+			? (int) NERA_IWT_SHUFFLE_MATERIALIZE_MAX
+			: 50000;
 
-		if ( empty( $pool ) ) {
-			return array();
+		if ( $max <= $materialize_max ) {
+			// Small pool: exact shuffle of the remaining numbers.
+			$pool = array_values( array_diff( range( 1, $max ), $placed ) );
+			if ( empty( $pool ) ) {
+				return array();
+			}
+			shuffle( $pool );
+			return array_map( 'strval', array_slice( $pool, 0, $quantity ) );
 		}
 
-		shuffle( $pool );
+		// Large pool: rejection sampling — never allocates the whole range.
+		$placed_lookup  = array_flip( array_map( 'strval', $placed ) );
+		$ticket_numbers = array();
+		$picked         = array();
+		$max_attempts   = $quantity * 200;
+		$attempts       = 0;
 
-		// Convert to strings to match LFW's expected ticket number format.
-		return array_map( 'strval', array_slice( $pool, 0, $quantity ) );
+		while ( count( $ticket_numbers ) < $quantity && $attempts < $max_attempts ) {
+			$num = (string) mt_rand( 1, $max );
+			if ( ! isset( $picked[ $num ] ) && ! isset( $placed_lookup[ $num ] ) ) {
+				$picked[ $num ]   = true;
+				$ticket_numbers[] = $num;
+			}
+			++$attempts;
+		}
+
+		return $ticket_numbers;
 	}
 }

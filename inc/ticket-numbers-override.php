@@ -381,3 +381,55 @@ function nera_iwt_cron_sync_all_hold_tickets() {
 	}
 }
 add_action( 'nera_iwt_sync_hold_cron', 'nera_iwt_cron_sync_all_hold_tickets' );
+
+// ---------------------------------------------------------------------------
+// CHECKOUT PERFORMANCE — bypass LFW's NOT REGEXP hold-ticket guard for large
+//                        orders, which times out MySQL's regex engine.
+//
+// LFW's LTY_Lottery_Product::maybe_update_hold_tickets() runs:
+//   UPDATE ... SET meta_value = {serialized holds}
+//   WHERE meta_key = '_lty_hold_tickets'
+//     AND meta_value NOT REGEXP '"n1"|"n2"|...|"nN"'
+// where the pattern lists EVERY ticket number in the order. For a large order
+// (e.g. 1000 tickets) the pattern has ~1000 alternations and MySQL aborts with
+// "Timeout exceeded in regular expression match." The UPDATE then returns false,
+// LFW's get_ticket_numbers() while-loop treats that as a collision and retries
+// forever → PHP max_execution_time → "There was an error processing your order."
+//
+// The REGEXP is only a best-effort in-flight concurrency guard; the authoritative
+// uniqueness check is lty_check_is_ticket_number_exists() (against real ticket
+// posts) earlier in the same loop, plus our nera_prize_hold posts. Returning true
+// here makes maybe_update_hold_tickets() skip the regex and report success, so the
+// loop completes. Holds are still persisted by LFW's subsequent
+// lty_update_lottery_post_meta() call.
+//
+// Gated by order size so small lotteries keep LFW's native guard. Override the
+// threshold with: define( 'NERA_IWT_HOLD_REGEXP_BYPASS_MIN', 100 );
+// ---------------------------------------------------------------------------
+
+/**
+ * Skip LFW's NOT REGEXP hold-ticket UPDATE when the order's ticket batch is large
+ * enough that the regex would time out.
+ *
+ * @param bool       $restrict       Whether LFW should skip the DB hold update.
+ * @param array      $ticket_numbers Ticket numbers being reserved this iteration.
+ * @param array      $hold_tickets   Current hold-ticket list (unused here).
+ * @param WC_Product $product        Lottery product (unused here).
+ * @return bool
+ */
+function nera_iwt_bypass_hold_regexp_for_large_orders( $restrict, $ticket_numbers, $hold_tickets, $product ) {
+	unset( $hold_tickets, $product );
+
+	if ( $restrict ) {
+		return $restrict;
+	}
+
+	$threshold = defined( 'NERA_IWT_HOLD_REGEXP_BYPASS_MIN' )
+		? max( 1, (int) NERA_IWT_HOLD_REGEXP_BYPASS_MIN )
+		: 100;
+
+	$count = is_array( $ticket_numbers ) ? count( $ticket_numbers ) : 0;
+
+	return $count >= $threshold;
+}
+add_filter( 'lty_restrict_db_hold_tickets_update', 'nera_iwt_bypass_hold_regexp_for_large_orders', 10, 4 );

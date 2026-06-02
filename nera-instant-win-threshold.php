@@ -3,7 +3,7 @@
  * Plugin Name: Nera – Instant Win Rules
  * Plugin URI: https://github.com/Nera-Marketing/nera-instant-win-threshold
  * Description: Instant win rule types (instant, scheduled, ticket sold %), public prize visibility, and optional instant-win UI overrides for Lottery for WooCommerce.
- * Version: 1.0.25
+ * Version: 1.0.26
  * Author: Nera
  * Text Domain: nera-instant-win-threshold
  * Requires at least: 6.0
@@ -16,7 +16,7 @@ defined( 'ABSPATH' ) || exit;
 
 use YahnisElsts\PluginUpdateChecker\v5p5\Vcs\GitHubApi;
 
-define( 'NERA_IWT_VERSION', '1.0.25' );
+define( 'NERA_IWT_VERSION', '1.0.26' );
 define( 'NERA_IWT_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'NERA_IWT_PLUGIN_FILE', __FILE__ );
 
@@ -424,3 +424,51 @@ function nera_iwt_enqueue_public_assets() {
 	}
 }
 add_action( 'wp_enqueue_scripts', 'nera_iwt_enqueue_public_assets', 20 );
+
+/**
+ * Checkout loading overlay assets.
+ *
+ * Large lottery orders take a few seconds to generate ticket numbers during the
+ * place-order AJAX request. These assets replace WooCommerce's default blockUI
+ * spinner with branded green bouncing dots + a status message so the customer
+ * knows the order is processing.
+ *
+ * @return void
+ */
+function nera_iwt_enqueue_checkout_loading_assets() {
+	if ( ! function_exists( 'is_checkout' ) || ! is_checkout() ) {
+		return;
+	}
+
+	$css_rel  = 'assets/checkout-loading.css';
+	$css_path = NERA_IWT_PLUGIN_DIR . $css_rel;
+	if ( is_readable( $css_path ) ) {
+		wp_enqueue_style(
+			'nera-iwt-checkout-loading',
+			plugins_url( $css_rel, __FILE__ ),
+			array(),
+			(string) filemtime( $css_path )
+		);
+	}
+
+	$js_rel  = 'assets/checkout-loading.js';
+	$js_path = NERA_IWT_PLUGIN_DIR . $js_rel;
+	if ( is_readable( $js_path ) ) {
+		wp_enqueue_script(
+			'nera-iwt-checkout-loading',
+			plugins_url( $js_rel, __FILE__ ),
+			array(),
+			(string) filemtime( $js_path ),
+			true
+		);
+
+		wp_localize_script(
+			'nera-iwt-checkout-loading',
+			'neraIwtCheckout',
+			array(
+				'message' => __( 'Processing your order&hellip; this can take a moment for large ticket quantities.', 'nera-instant-win-threshold' ),
+			)
+		);
+	}
+}
+add_action( 'wp_enqueue_scripts', 'nera_iwt_enqueue_checkout_loading_assets', 20 );
