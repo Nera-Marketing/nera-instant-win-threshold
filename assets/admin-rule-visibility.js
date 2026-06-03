@@ -754,6 +754,36 @@
 				.addClass('nera-iwt-instant-win-ticket-range-note')
 				.text('* ' + String(admin.instantWinTicketRangeNote))
 		);
+		neraIwtAppendStatusLegend($w);
+	}
+
+	/**
+	 * Append the prize status-colour legend below the ticket-range note.
+	 *
+	 * @param {jQuery} $w Note wrapper.
+	 */
+	function neraIwtAppendStatusLegend($w) {
+		if (!$w || !$w.length || $w.find('.nera-iwt-status-legend').length) {
+			return;
+		}
+		var items = [
+			{ s: 'locked', t: 'Not available yet — ticket-sold % has not reached this prize’s threshold.' },
+			{ s: 'available', t: 'Available — instant, or ticket-sold % reached; no winner yet.' },
+			{ s: 'won', t: 'Available and a winner has been assigned.' }
+		];
+		var $legend = $('<div class="nera-iwt-status-legend"></div>');
+		$legend.append(
+			$('<p class="nera-iwt-status-legend-title"></p>').text('Prize status (dot beside each ID):')
+		);
+		var $ul = $('<ul class="nera-iwt-status-legend-list"></ul>');
+		$.each(items, function (i, item) {
+			var $li = $('<li></li>');
+			$li.append($('<span class="nera-iwt-status-dot" aria-hidden="true"></span>').addClass('nera-iwt-dot-' + item.s));
+			$li.append(document.createTextNode(' ' + item.t));
+			$ul.append($li);
+		});
+		$legend.append($ul);
+		$w.append($legend);
 	}
 
 	// ── Prize search ──────────────────────────────────────────────────────────
@@ -870,6 +900,65 @@
 
 	// ── End prize search ───────────────────────────────────────────────────────
 
+	// ── Row status colours ──────────────────────────────────────────────────────
+
+	/**
+	 * Short label for the status dot tooltip.
+	 *
+	 * @param {string} status
+	 * @return {string}
+	 */
+	function neraIwtStatusLabel(status) {
+		if (status === 'locked') {
+			return 'Not available yet';
+		}
+		if (status === 'won') {
+			return 'Available — winner assigned';
+		}
+		return 'Available';
+	}
+
+	/**
+	 * Place a small status dot beside each row's "ID: xxxx" text, coloured from the
+	 * server-rendered data-nera-status on the rule-type cell:
+	 *   locked => red, available => green, won => orange.
+	 */
+	function neraIwtApplyRowStatusColors() {
+		var statuses = ['locked', 'available', 'won'];
+		$('.lty-instant-winners-rules-contents tbody tr').each(function () {
+			var $tr  = $(this);
+			var $cell = $tr.find('.nera-iwt-public-rule-type-column[data-nera-status]').first();
+			if (!$cell.length) {
+				return;
+			}
+			var status = String($cell.attr('data-nera-status') || '');
+			if (statuses.indexOf(status) === -1) {
+				return;
+			}
+
+			// Anchor the dot to the "ID:" <small> in the first cell (fallback: the cell).
+			var $anchor = $tr.find('td').first().find('small').first();
+			if (!$anchor.length) {
+				$anchor = $tr.find('td').first();
+			}
+			if (!$anchor.length) {
+				return;
+			}
+
+			var $dot = $anchor.find('.nera-iwt-status-dot').first();
+			if (!$dot.length) {
+				$dot = $('<span class="nera-iwt-status-dot" aria-hidden="true"></span>');
+				$anchor.prepend($dot);
+			}
+			$dot
+				.removeClass('nera-iwt-dot-locked nera-iwt-dot-available nera-iwt-dot-won')
+				.addClass('nera-iwt-dot-' + status)
+				.attr('title', neraIwtStatusLabel(status));
+		});
+	}
+
+	// ── End row status colours ───────────────────────────────────────────────────
+
 	$(function () {
 		neraIwtResetTicketPatternSequentialBaseline();
 		$('#_lty_ticket_generation_type').each(function () {
@@ -885,6 +974,7 @@
 		refreshAll();
 		bindNeraIwtModalOpenHandlers();
 		neraIwtInjectPrizeSearchUI();
+		neraIwtApplyRowStatusColors();
 	});
 
 	// Re-bind after Add New Rule link (modal node may have been replaced).
@@ -931,6 +1021,7 @@
 			refreshAll();
 			bindNeraIwtModalOpenHandlers();
 			neraIwtInjectPrizeSearchUI();
+			neraIwtApplyRowStatusColors();
 			if (neraIwtPrizeSearchTerm) {
 				neraIwtApplyPrizeFilter(neraIwtPrizeSearchTerm);
 			}

@@ -333,6 +333,36 @@ function nera_iwt_sync_hold_before_lfw( $order_or_id ) {
 add_action( 'woocommerce_checkout_update_order_meta', 'nera_iwt_sync_hold_before_lfw', 1 );
 add_action( 'woocommerce_store_api_checkout_order_processed', 'nera_iwt_sync_hold_before_lfw', 1 );
 
+/**
+ * Sync hold tickets before LFW's REST-API ticket creation.
+ *
+ * LFW also creates tickets via LTY_Order_Handler::create_ticket_on_placing_order_via_rest_api()
+ * on `woocommerce_after_order_object_save` @10, for orders placed through the REST API
+ * (many payment gateways / webhooks save the order object in a REST context). The two
+ * checkout hooks above do NOT fire on that path, so without this hook no hold posts exist
+ * when LFW assigns tickets — letting a locked instant-win prize number be auto-assigned and
+ * won before its schedule / ticket-% threshold is reached.
+ *
+ * Mirror LFW's own guard (REST request, not Store API) and run at priority 1 so holds are in
+ * place before LFW @10. The generator-level exclusion in ticket-generation-override.php already
+ * blocks shuffle/random pools; this additionally protects sequential/manual ticket types whose
+ * generation LFW handles natively and which rely on the nera_prize_hold existence check.
+ *
+ * @param WC_Order $order Order object passed by woocommerce_after_order_object_save.
+ * @return void
+ */
+function nera_iwt_sync_hold_before_lfw_rest( $order ) {
+	if ( ! function_exists( 'WC' ) || ! WC() ) {
+		return;
+	}
+	// Only the REST (non-Store-API) path triggers LFW's REST ticket creation.
+	if ( ! WC()->is_rest_api_request() || ( method_exists( WC(), 'is_store_api_request' ) && WC()->is_store_api_request() ) ) {
+		return;
+	}
+	nera_iwt_sync_hold_before_lfw( $order );
+}
+add_action( 'woocommerce_after_order_object_save', 'nera_iwt_sync_hold_before_lfw_rest', 1 );
+
 // ---------------------------------------------------------------------------
 // CRON — periodic sync to release prizes that became available without a
 //         checkout triggering the sync (e.g. schedule window opens overnight)

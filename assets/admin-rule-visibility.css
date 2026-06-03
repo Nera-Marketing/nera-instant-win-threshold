@@ -259,3 +259,78 @@ body.post-type-product .nera-iwt-prize-search-count {
 	vertical-align: middle;
 	white-space: nowrap;
 }
+
+/* ------------------------------------------------------------------------- */
+/* Prizes table — status dot beside "ID: xxxx" (data-nera-status via JS).     */
+/*   locked    => not yet available (e.g. ticket-% threshold not reached) red */
+/*   available => available, no winner                                  green */
+/*   won       => available, has a winner                              orange */
+/* No row background / text colour — only the dot is coloured.                */
+/* ------------------------------------------------------------------------- */
+
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-status-dot {
+	display: inline-block;
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	margin-right: 5px;
+	vertical-align: middle;
+	box-shadow: inset 0 0 0 1px rgba( 0, 0, 0, 0.12 );
+	background: #c3c4c7; /* fallback / unknown */
+}
+
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-status-dot.nera-iwt-dot-locked {
+	background: #dc3545; /* red */
+}
+
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-status-dot.nera-iwt-dot-available {
+	background: #28a745; /* green */
+}
+
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-status-dot.nera-iwt-dot-won {
+	background: #f59e0b; /* orange */
+}
+
+/* Status legend in the rules note area (mirrors the dot colours above). */
+body.post-type-product .nera-iwt-status-legend {
+	margin: 6px 0 0;
+}
+
+body.post-type-product .nera-iwt-status-legend .nera-iwt-status-legend-title {
+	margin: 0 0 3px;
+	font-weight: 600;
+}
+
+body.post-type-product .nera-iwt-status-legend .nera-iwt-status-legend-list {
+	margin: 0 0 0 2px;
+	padding: 0;
+	list-style: none;
+}
+
+body.post-type-product .nera-iwt-status-legend .nera-iwt-status-legend-list li {
+	margin: 0 0 2px;
+	line-height: 1.5;
+}
+
+body.post-type-product .nera-iwt-status-legend .nera-iwt-status-dot {
+	display: inline-block;
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	margin-right: 5px;
+	vertical-align: middle;
+	box-shadow: inset 0 0 0 1px rgba( 0, 0, 0, 0.12 );
+	background: #c3c4c7;
+}
+
+body.post-type-product .nera-iwt-status-legend .nera-iwt-status-dot.nera-iwt-dot-locked {
+	background: #dc3545;
+}
+
+body.post-type-product .nera-iwt-status-legend .nera-iwt-status-dot.nera-iwt-dot-available {
+	background: #28a745;
+}
+
+body.post-type-product .nera-iwt-status-legend .nera-iwt-status-dot.nera-iwt-dot-won {
+	background: #f59e0b;
+}

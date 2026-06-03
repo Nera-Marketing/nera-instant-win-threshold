@@ -91,6 +91,40 @@ function nera_iwt_resolve_shuffle_random_pool_max( $product ) {
 	return $lfw_based;
 }
 
+/**
+ * Ticket numbers the generator must never assign, as an O(1) lookup hash
+ * ( "number" => true ): already-placed tickets PLUS instant-win prize tickets
+ * that are currently locked (schedule not yet open, or ticket-sold % below the
+ * configured threshold).
+ *
+ * Excluding locked prize numbers directly in the generator — not only via the
+ * nera_prize_hold posts that LFW's existence check reads — guarantees a locked
+ * prize can never be auto-assigned on ANY order-creation path (classic checkout,
+ * block checkout, or the REST/Store-API order-save path), independent of whether
+ * the hold-sync hook happened to run for that particular request. This is what
+ * prevents a ticket-% prize from being won before its threshold is reached.
+ *
+ * @param WC_Product $product Lottery product.
+ * @return array<string,bool>
+ */
+function nera_iwt_generator_excluded_ticket_lookup( $product ) {
+	$lookup = array();
+
+	if ( is_object( $product ) && method_exists( $product, 'get_placed_tickets' ) ) {
+		foreach ( (array) $product->get_placed_tickets() as $n ) {
+			$lookup[ (string) $n ] = true;
+		}
+	}
+
+	if ( function_exists( 'nera_iwt_get_unavailable_prize_ticket_numbers' ) ) {
+		foreach ( (array) nera_iwt_get_unavailable_prize_ticket_numbers( $product ) as $n ) {
+			$lookup[ (string) $n ] = true;
+		}
+	}
+
+	return $lookup;
+}
+
 // ---------------------------------------------------------------------------
 // RANDOM ticket numbers
 // ---------------------------------------------------------------------------
@@ -117,9 +151,8 @@ if ( ! function_exists( 'lty_get_random_ticket_numbers' ) ) {
 		$max      = nera_iwt_resolve_shuffle_random_pool_max( $product );
 		$quantity = max( 1, (int) $quantity );
 
-		$placed_lookup = is_object( $product ) && method_exists( $product, 'get_placed_tickets' )
-			? array_flip( array_map( 'strval', (array) $product->get_placed_tickets() ) )
-			: array();
+		// Excludes placed tickets AND currently-locked instant-win prize numbers.
+		$placed_lookup = nera_iwt_generator_excluded_ticket_lookup( $product );
 
 		$ticket_numbers = array();
 		$picked         = array();
@@ -169,9 +202,8 @@ if ( ! function_exists( 'lty_get_remaining_shuffle_ticket_numbers' ) ) {
 		$max      = nera_iwt_resolve_shuffle_random_pool_max( $product );
 		$quantity = max( 1, (int) $quantity );
 
-		$placed = is_object( $product ) && method_exists( $product, 'get_placed_tickets' )
-			? array_map( 'intval', (array) $product->get_placed_tickets() )
-			: array();
+		// Excludes placed tickets AND currently-locked instant-win prize numbers.
+		$placed_lookup = nera_iwt_generator_excluded_ticket_lookup( $product );
 
 		// Threshold above which we never materialise the full range in memory.
 		$materialize_max = defined( 'NERA_IWT_SHUFFLE_MATERIALIZE_MAX' )
@@ -180,7 +212,8 @@ if ( ! function_exists( 'lty_get_remaining_shuffle_ticket_numbers' ) ) {
 
 		if ( $max <= $materialize_max ) {
 			// Small pool: exact shuffle of the remaining numbers.
-			$pool = array_values( array_diff( range( 1, $max ), $placed ) );
+			$exclude_int = array_map( 'intval', array_keys( $placed_lookup ) );
+			$pool        = array_values( array_diff( range( 1, $max ), $exclude_int ) );
 			if ( empty( $pool ) ) {
 				return array();
 			}
@@ -189,7 +222,6 @@ if ( ! function_exists( 'lty_get_remaining_shuffle_ticket_numbers' ) ) {
 		}
 
 		// Large pool: rejection sampling — never allocates the whole range.
-		$placed_lookup  = array_flip( array_map( 'strval', $placed ) );
 		$ticket_numbers = array();
 		$picked         = array();
 		$max_attempts   = $quantity * 200;

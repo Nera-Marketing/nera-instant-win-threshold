@@ -3,7 +3,7 @@
  * Plugin Name: Nera – Instant Win Rules
  * Plugin URI: https://github.com/Nera-Marketing/nera-instant-win-threshold
  * Description: Instant win rule types (instant, scheduled, ticket sold %), public prize visibility, and optional instant-win UI overrides for Lottery for WooCommerce.
- * Version: 1.0.26
+ * Version: 1.0.27
  * Author: Nera
  * Text Domain: nera-instant-win-threshold
  * Requires at least: 6.0
@@ -16,7 +16,7 @@ defined( 'ABSPATH' ) || exit;
 
 use YahnisElsts\PluginUpdateChecker\v5p5\Vcs\GitHubApi;
 
-define( 'NERA_IWT_VERSION', '1.0.26' );
+define( 'NERA_IWT_VERSION', '1.0.27' );
 define( 'NERA_IWT_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'NERA_IWT_PLUGIN_FILE', __FILE__ );
 
@@ -366,12 +366,32 @@ register_activation_hook( NERA_IWT_PLUGIN_FILE, 'nera_iwt_write_gen_mu_shim' );
 register_deactivation_hook( NERA_IWT_PLUGIN_FILE, 'nera_iwt_remove_gen_mu_shim' );
 
 /**
- * Lazy-recreate the shim if it was deleted manually.
+ * Lazy-recreate / self-heal the shim.
+ *
+ * Recreates the shim when it is missing OR when it does not reference the current
+ * install's override path. The latter matters because the shim stores an ABSOLUTE
+ * path: cloning or restoring the site from another environment (e.g. production
+ * `/srv/htdocs/...` copied onto a local `D:/laragon/...` install) leaves a stale
+ * shim whose `is_readable()` check fails, so the override never loads and LFW's
+ * native generator — which does NOT exclude locked instant-win prize numbers —
+ * runs instead, letting locked prizes be assigned/won before their threshold.
+ * Validating the path on every load makes the protection survive environment moves.
  *
  * @return void
  */
 function nera_iwt_ensure_gen_mu_shim() {
-	if ( ! file_exists( NERA_IWT_GEN_MU_SHIM_PATH ) ) {
+	$expected = wp_normalize_path( WP_PLUGIN_DIR . '/nera-instant-win-threshold/inc/ticket-generation-override.php' );
+
+	$needs_write = true;
+	if ( file_exists( NERA_IWT_GEN_MU_SHIM_PATH ) ) {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+		$contents = (string) file_get_contents( NERA_IWT_GEN_MU_SHIM_PATH );
+		if ( '' !== $expected && false !== strpos( $contents, $expected ) ) {
+			$needs_write = false;
+		}
+	}
+
+	if ( $needs_write ) {
 		nera_iwt_write_gen_mu_shim();
 	}
 }

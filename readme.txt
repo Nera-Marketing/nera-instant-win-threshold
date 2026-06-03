@@ -4,7 +4,7 @@ Tags: woocommerce, lottery, instant win, competition, giveaway
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.0.26
+Stable tag: 1.0.27
 License: GPLv2 or later
 
 Instant win rule types, public prize visibility, and optional instant-win UI overrides for Lottery for WooCommerce.
@@ -26,6 +26,12 @@ This plugin extends **Lottery for WooCommerce** (Giveaway for WooCommerce) with:
 3. Configure instant win rules and visibility on competition products as supported by your theme and Lottery for WooCommerce.
 
 == Changelog ==
+
+= 1.0.27 =
+* Fix — Ticket generator excludes locked instant-win prize numbers on every path (shuffle/random pools); REST API `woocommerce_after_order_object_save` hold sync before LFW assigns tickets.
+* Fix — MU-plugin shim self-heals when the override path changes (site clone / environment move).
+* Admin — Instant Win rules table: row status dots and legend (locked / available / won).
+* Removed — One-off `scripts/fix-ticket-19984.php` remediation and mu-plugin loader (no longer shipped).
 
 = 1.0.26 =
 * Fix — Checkout: bypass LFW hold-ticket NOT REGEXP guard for large orders (avoids MySQL regex timeout and infinite retry on big ticket quantities; threshold configurable via `NERA_IWT_HOLD_REGEXP_BYPASS_MIN`).

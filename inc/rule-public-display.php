@@ -830,6 +830,84 @@ function nera_iwt_admin_rule_column_header() {
 add_action( 'lty_instant_winner_rule_column', 'nera_iwt_admin_rule_column_header', 5 );
 
 /**
+ * Whether a rule's prize is currently available (unlocked) in the admin context.
+ *
+ *  - instant     → always available.
+ *  - ticket_pct  → available once current ticket-sold % reaches the threshold
+ *                  (pct 0 means "no gate" → available).
+ *  - schedule    → available within the [start, end] window (server UTC).
+ *
+ * @param string          $type          Rule type slug.
+ * @param int             $pct           Ticket-% threshold.
+ * @param string          $sched_gmt     Schedule start (GMT 'Y-m-d H:i:s') or ''.
+ * @param string          $sched_end_gmt Schedule end (GMT 'Y-m-d H:i:s') or ''.
+ * @param WC_Product|null $product       Lottery product.
+ * @return bool
+ */
+function nera_iwt_admin_rule_is_available( $type, $pct, $sched_gmt, $sched_end_gmt, $product ) {
+	if ( NERA_IWT_RULE_TYPE_TICKET_PCT === $type ) {
+		$pct = (int) $pct;
+		if ( $pct <= 0 ) {
+			return true;
+		}
+		$sold = ( $product instanceof WC_Product ) ? nera_iwt_get_lottery_ticket_sold_percent( $product ) : null;
+		if ( null === $sold ) {
+			return false;
+		}
+		return (float) $sold >= (float) $pct;
+	}
+
+	if ( NERA_IWT_RULE_TYPE_SCHEDULE === $type ) {
+		$now = time();
+		$at  = ( '' !== (string) $sched_gmt ) ? strtotime( $sched_gmt . ' UTC' ) : false;
+		$end = ( '' !== (string) $sched_end_gmt ) ? strtotime( $sched_end_gmt . ' UTC' ) : false;
+		if ( $at && $now < $at ) {
+			return false;
+		}
+		if ( $end && $now > $end ) {
+			return false;
+		}
+		return true;
+	}
+
+	// instant (and any unknown type) → available.
+	return true;
+}
+
+/**
+ * Resolve the admin row status for colour-coding the prizes table.
+ *
+ *  - 'locked'    → not yet available (e.g. ticket-% threshold not reached) → red.
+ *  - 'won'       → available and already has a winner                      → orange.
+ *  - 'available' → available and not yet won                              → green.
+ *
+ * @param int             $rule_id       Rule post ID.
+ * @param string          $type          Rule type slug.
+ * @param int             $pct           Ticket-% threshold.
+ * @param string          $sched_gmt     Schedule start (GMT) or ''.
+ * @param string          $sched_end_gmt Schedule end (GMT) or ''.
+ * @param WC_Product|null $product       Lottery product.
+ * @return string One of 'locked' | 'won' | 'available'.
+ */
+function nera_iwt_admin_rule_status( $rule_id, $type, $pct, $sched_gmt, $sched_end_gmt, $product ) {
+	if ( ! nera_iwt_admin_rule_is_available( $type, $pct, $sched_gmt, $sched_end_gmt, $product ) ) {
+		return 'locked';
+	}
+
+	$won = get_posts(
+		array(
+			'post_type'      => 'lty_ins_winner_log',
+			'post_parent'    => (int) $rule_id,
+			'post_status'    => 'lty_won',
+			'posts_per_page' => 1,
+			'fields'         => 'ids',
+		)
+	);
+
+	return empty( $won ) ? 'available' : 'won';
+}
+
+/**
  * Admin: editable table cell (Rule type, Schedule at / end, Ticket sold %) — same behaviour as Add Rule modal.
  *
  * @param LTY_Instant_Winner_Rule $instant_winner Rule object.
@@ -856,8 +934,11 @@ function nera_iwt_admin_rule_column_cell( $instant_winner ) {
 	}
 
 	$labels = nera_iwt_public_rule_type_labels_for_admin_select( $type, $product );
+
+	// Live status for row colour-coding (see admin-rule-visibility.js / .css).
+	$status = nera_iwt_admin_rule_status( $rule_id, $type, $pct, $sched_gmt, $sched_end_gmt, $product );
 	?>
-	<td class="nera-iwt-public-rule-type-column">
+	<td class="nera-iwt-public-rule-type-column" data-nera-status="<?php echo esc_attr( $status ); ?>">
 		<div class="nera-iwt-rule-visibility-fields nera-iwt-rule-visibility-table-fields">
 			<p class="nera-iwt-table-field-row">
 				<label class="screen-reader-text" for="nera-iwt-public-rule-type-<?php echo esc_attr( (string) $rule_id ); ?>">
