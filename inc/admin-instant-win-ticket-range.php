@@ -130,6 +130,13 @@ function nera_iwt_ajax_validate_add_rule_ticket_number_range() {
 	if ( is_wp_error( $result ) ) {
 		wp_send_json_error( array( 'error' => $result->get_error_message() ) );
 	}
+
+	if ( function_exists( 'nera_iwt_validate_rule_reserve_slots_feasibility' ) ) {
+		$result = nera_iwt_validate_rule_reserve_slots_feasibility( $product, $raw, 0 );
+		if ( is_wp_error( $result ) ) {
+			wp_send_json_error( array( 'error' => $result->get_error_message() ) );
+		}
+	}
 }
 
 /**
@@ -162,6 +169,13 @@ function nera_iwt_ajax_validate_bulk_save_ticket_number_range() {
 		}
 
 		$result = nera_iwt_validate_instant_win_ticket_number_range( $product, $row['ticket_number'] );
+		if ( is_wp_error( $result ) ) {
+			wp_send_json_error( array( 'error' => $result->get_error_message() ) );
+		}
+	}
+
+	if ( function_exists( 'nera_iwt_validate_product_ticket_pct_reserve_slots' ) ) {
+		$result = nera_iwt_validate_product_ticket_pct_reserve_slots( $product, $raw_rules );
 		if ( is_wp_error( $result ) ) {
 			wp_send_json_error( array( 'error' => $result->get_error_message() ) );
 		}

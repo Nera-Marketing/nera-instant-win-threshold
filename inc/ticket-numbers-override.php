@@ -96,7 +96,7 @@ add_filter( 'lty_ticket_statuses', 'nera_iwt_add_prize_hold_to_ticket_statuses' 
  * @param WC_Product $product Lottery WooCommerce product object.
  * @return array Ticket number values (strings or ints as stored).
  */
-function nera_iwt_get_unavailable_prize_ticket_numbers( $product ) {
+function nera_iwt_get_unavailable_prize_ticket_numbers( $product, $extra_sold = 0 ) {
 
 	if ( ! $product instanceof WC_Product ) {
 		return array();
@@ -126,7 +126,7 @@ function nera_iwt_get_unavailable_prize_ticket_numbers( $product ) {
 		$now_local = null;
 	}
 	$now_utc  = time();
-	$pct_sold = nera_iwt_get_lottery_ticket_sold_percent( $product );
+	$pct_sold = nera_iwt_get_lottery_ticket_sold_percent( $product, $extra_sold );
 
 	$unavailable_tickets = array();
 
@@ -229,7 +229,7 @@ function nera_iwt_get_unavailable_prize_ticket_numbers( $product ) {
  * @param WC_Product $product Lottery product.
  * @return void
  */
-function nera_iwt_sync_prize_hold_tickets( $product ) {
+function nera_iwt_sync_prize_hold_tickets( $product, $extra_sold = 0 ) {
 
 	if ( ! $product instanceof WC_Product || 'lottery' !== $product->get_type() ) {
 		return;
@@ -268,7 +268,7 @@ function nera_iwt_sync_prize_hold_tickets( $product ) {
 	}
 
 	// Current unavailable ticket numbers.
-	$unavailable = array_map( 'strval', nera_iwt_get_unavailable_prize_ticket_numbers( $product ) );
+	$unavailable = array_map( 'strval', nera_iwt_get_unavailable_prize_ticket_numbers( $product, $extra_sold ) );
 
 	// CREATE hold posts for newly unavailable tickets.
 	foreach ( $unavailable as $ticket_number ) {
@@ -290,6 +290,85 @@ function nera_iwt_sync_prize_hold_tickets( $product ) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// REQUEST-LOCAL PROJECTION MAP — in-flight ticket count for threshold evaluation
+//
+// During checkout, sold% is projected as (current_purchased + tickets_in_this_order)
+// so that a purchase which crosses a ticket-% threshold releases the prize number
+// into the same order's assignable pool (Part A of the reserve-slots fix).
+//
+// Keyed by WooCommerce product ID (int). Set at priority 1 (before LFW @10),
+// cleared after ticket creation to avoid stale values in long-running requests.
+// ---------------------------------------------------------------------------
+
+/** @var array<int,int> Request-local map: product_id => in-flight quantity. */
+$GLOBALS['_nera_iwt_generation_projection'] = $GLOBALS['_nera_iwt_generation_projection'] ?? array();
+
+/**
+ * Sum order-item quantities per lottery product for the given order.
+ *
+ * @param WC_Order $order
+ * @return array<int,int> product_id => total quantity in this order.
+ */
+function nera_iwt_get_order_projected_quantities( WC_Order $order ) {
+	$map = array();
+	foreach ( $order->get_items() as $item ) {
+		/** @var WC_Order_Item_Product $item */
+		$product = $item->get_product();
+		if ( ! $product || 'lottery' !== $product->get_type() ) {
+			continue;
+		}
+		$product_id            = (int) $product->get_id();
+		$map[ $product_id ]    = ( isset( $map[ $product_id ] ) ? $map[ $product_id ] : 0 ) + max( 0, (int) $item->get_quantity() );
+	}
+	return $map;
+}
+
+/**
+ * Store per-product projected quantities for an order in the request-local map.
+ *
+ * Must be called before LFW ticket generation runs (priority 1 on checkout hooks).
+ *
+ * @param WC_Order $order
+ * @return array<int,int> Same map that was stored.
+ */
+function nera_iwt_set_order_generation_projection( WC_Order $order ) {
+	$quantities = nera_iwt_get_order_projected_quantities( $order );
+	foreach ( $quantities as $product_id => $qty ) {
+		$GLOBALS['_nera_iwt_generation_projection'][ $product_id ] = $qty;
+	}
+	return $quantities;
+}
+
+/**
+ * Return the in-flight quantity for a product from the request-local projection map.
+ *
+ * Returns 0 when no projection is registered — never falls back to $quantity so
+ * uncovered generation paths keep the conservative (non-projecting) behaviour.
+ *
+ * @param WC_Product $product
+ * @return int
+ */
+function nera_iwt_get_generation_projection_extra_sold( WC_Product $product ) {
+	$product_id = (int) $product->get_id();
+	return isset( $GLOBALS['_nera_iwt_generation_projection'][ $product_id ] )
+		? (int) $GLOBALS['_nera_iwt_generation_projection'][ $product_id ]
+		: 0;
+}
+
+/**
+ * Clear all entries from the request-local projection map.
+ *
+ * Hooked to lty_lottery_ticket_after_created so stale projections don't linger
+ * into subsequent operations in long-running REST / admin requests.
+ *
+ * @return void
+ */
+function nera_iwt_clear_order_generation_projection() {
+	$GLOBALS['_nera_iwt_generation_projection'] = array();
+}
+add_action( 'lty_lottery_ticket_after_created', 'nera_iwt_clear_order_generation_projection' );
 
 // ---------------------------------------------------------------------------
 // CHECKOUT HOOK — sync before LFW assigns tickets (priority 1 < LFW's 10)
@@ -321,13 +400,17 @@ function nera_iwt_sync_hold_before_lfw( $order_or_id ) {
 		return;
 	}
 
+	// Store projected quantities in request-local map before LFW generates tickets.
+	$projected = nera_iwt_set_order_generation_projection( $order );
+
 	foreach ( $order->get_items() as $item ) {
 		/** @var WC_Order_Item_Product $item */
 		$product = $item->get_product();
 		if ( ! $product || 'lottery' !== $product->get_type() ) {
 			continue;
 		}
-		nera_iwt_sync_prize_hold_tickets( $product );
+		$extra_sold = isset( $projected[ (int) $product->get_id() ] ) ? $projected[ (int) $product->get_id() ] : 0;
+		nera_iwt_sync_prize_hold_tickets( $product, $extra_sold );
 	}
 }
 add_action( 'woocommerce_checkout_update_order_meta', 'nera_iwt_sync_hold_before_lfw', 1 );

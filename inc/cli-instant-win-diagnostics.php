@@ -121,3 +121,209 @@ WP_CLI::add_command(
 		),
 	)
 );
+
+/**
+ * Report fixed pool size, resolved generator max, and held prize numbers.
+ *
+ * ## OPTIONS
+ *
+ * [--product-id=<id>]
+ * : Lottery product ID.
+ *
+ * @param array<int, string> $args       Positional.
+ * @param array<string, mixed> $assoc_args Flags.
+ */
+function nera_iwt_cli_pool_status( array $args, array $assoc_args ) {
+	unset( $args );
+	$product_id = isset( $assoc_args['product-id'] ) ? absint( $assoc_args['product-id'] ) : 0;
+	if ( $product_id <= 0 ) {
+		WP_CLI::error( 'Usage: wp nera-iwt pool-status --product-id=<lottery_product_id>' );
+	}
+
+	$product = wc_get_product( $product_id );
+	if ( ! $product || ! function_exists( 'lty_is_lottery_product' ) || ! lty_is_lottery_product( $product ) ) {
+		WP_CLI::error( sprintf( 'Product %d is not a lottery product.', $product_id ) );
+	}
+
+	$pool_n    = function_exists( 'nera_iwt_get_reserve_slots_pool_n' ) ? nera_iwt_get_reserve_slots_pool_n( $product ) : 0;
+	$resolved  = function_exists( 'nera_iwt_resolve_shuffle_random_pool_max' ) ? nera_iwt_resolve_shuffle_random_pool_max( $product ) : 0;
+	$lfw_max   = method_exists( $product, 'get_lty_maximum_tickets' ) ? (int) $product->get_lty_maximum_tickets() : 0;
+	$held      = function_exists( 'nera_iwt_get_unavailable_prize_ticket_numbers' ) ? nera_iwt_get_unavailable_prize_ticket_numbers( $product ) : array();
+	$placed    = method_exists( $product, 'get_placed_tickets' ) ? count( (array) $product->get_placed_tickets() ) : 0;
+
+	WP_CLI::log( sprintf( 'Pool N (configured): %d', $pool_n ) );
+	WP_CLI::log( sprintf( 'Resolved shuffle/random max: %d', $resolved ) );
+	WP_CLI::log( sprintf( 'LFW maximum tickets: %d', $lfw_max ) );
+	WP_CLI::log( sprintf( 'Placed tickets: %d', $placed ) );
+	WP_CLI::log( sprintf( 'Currently held (locked) prize numbers: %d', count( $held ) ) );
+
+	if ( $resolved > $pool_n && $pool_n > 0 ) {
+		WP_CLI::warning( 'Resolved max exceeds pool N — legacy +held expansion may still be active (should not happen after reserve-slots fix).' );
+	} elseif ( $resolved === $pool_n || ( $pool_n <= 0 && $resolved === $lfw_max ) ) {
+		WP_CLI::log( 'Pool ceiling matches reserve-slots expectation (no +held expansion).' );
+	}
+
+	if ( $pool_n > 0 && $lfw_max > 0 && $pool_n < $lfw_max ) {
+		WP_CLI::warning( 'Ticket Number Max is below Maximum Tickets — sellout cannot fill all buyer slots.' );
+	}
+
+	WP_CLI::success( 'Pool status complete.' );
+}
+
+WP_CLI::add_command( 'nera-iwt pool-status', 'nera_iwt_cli_pool_status' );
+
+/**
+ * Validate ticket-% reserve-slots feasibility for a product's rules.
+ *
+ * ## OPTIONS
+ *
+ * [--product-id=<id>]
+ * : Lottery product ID.
+ *
+ * @param array<int, string> $args       Positional.
+ * @param array<string, mixed> $assoc_args Flags.
+ */
+function nera_iwt_cli_test_feasibility( array $args, array $assoc_args ) {
+	unset( $args );
+	$product_id = isset( $assoc_args['product-id'] ) ? absint( $assoc_args['product-id'] ) : 0;
+	if ( $product_id <= 0 ) {
+		WP_CLI::error( 'Usage: wp nera-iwt test-feasibility --product-id=<lottery_product_id>' );
+	}
+
+	$product = wc_get_product( $product_id );
+	if ( ! $product || ! function_exists( 'lty_is_lottery_product' ) || ! lty_is_lottery_product( $product ) ) {
+		WP_CLI::error( sprintf( 'Product %d is not a lottery product.', $product_id ) );
+	}
+
+	if ( ! function_exists( 'nera_iwt_validate_product_ticket_pct_reserve_slots' ) ) {
+		WP_CLI::error( 'ticket-pool-feasibility.php is not loaded.' );
+	}
+
+	$pool_n = nera_iwt_get_reserve_slots_pool_n( $product );
+	WP_CLI::log( sprintf( 'Pool N: %d', $pool_n ) );
+
+	$result = nera_iwt_validate_product_ticket_pct_reserve_slots( $product, array() );
+	if ( is_wp_error( $result ) ) {
+		WP_CLI::error( $result->get_error_message() );
+	}
+
+	// Infeasible probe: 100% on a synthetic pool.
+	$probe = nera_iwt_validate_ticket_pct_reserve_slots( max( 1, $pool_n ), 100, 1 );
+	if ( ! is_wp_error( $probe ) ) {
+		WP_CLI::warning( 'Expected 100% threshold to be rejected — check nera_iwt_validate_ticket_pct_reserve_slots.' );
+	} else {
+		WP_CLI::log( 'Deadlock guard (100%): ' . $probe->get_error_message() );
+	}
+
+	WP_CLI::success( 'All ticket-% rules pass reserve-slots feasibility.' );
+}
+
+WP_CLI::add_command( 'nera-iwt test-feasibility', 'nera_iwt_cli_test_feasibility' );
+
+/**
+ * Stepwise sellout simulation (reserve-slots) without creating orders.
+ *
+ * ## OPTIONS
+ *
+ * [--n=<int>]
+ * : Pool size (default 10000).
+ *
+ * [--prizes=<int>]
+ * : Number of instant prizes, evenly spaced ticket numbers in 1..n (default 900).
+ *
+ * [--thresholds=<list>]
+ * : Comma-separated ticket-% thresholds applied to first K prizes (e.g. 50,80,90).
+ *
+ * @param array<int, string> $args       Positional.
+ * @param array<string, mixed> $assoc_args Flags.
+ */
+function nera_iwt_cli_simulate_sellout( array $args, array $assoc_args ) {
+	unset( $args );
+	$n       = isset( $assoc_args['n'] ) ? max( 1, (int) $assoc_args['n'] ) : 10000;
+	$prizes  = isset( $assoc_args['prizes'] ) ? max( 0, (int) $assoc_args['prizes'] ) : 900;
+	$thr_raw = isset( $assoc_args['thresholds'] ) ? (string) $assoc_args['thresholds'] : '';
+
+	$thresholds = array();
+	if ( '' !== $thr_raw ) {
+		foreach ( explode( ',', $thr_raw ) as $part ) {
+			$t = max( 0, min( 100, (int) trim( $part ) ) );
+			if ( $t > 0 ) {
+				$thresholds[] = $t;
+			}
+		}
+	}
+
+	// Prize ticket numbers evenly inside 1..n; first len(thresholds) prizes use those thresholds.
+	$prize_list = array();
+	if ( $prizes > 0 ) {
+		$step = max( 1, (int) floor( $n / ( $prizes + 1 ) ) );
+		for ( $i = 1; $i <= $prizes; $i++ ) {
+			$num          = min( $n, $i * $step );
+			$idx          = $i - 1;
+			$threshold    = isset( $thresholds[ $idx ] ) ? $thresholds[ $idx ] : 0;
+			$prize_list[] = array(
+				'num'       => $num,
+				'threshold' => $threshold,
+			);
+		}
+	}
+
+	$sold_set = array();
+	$deadlock = false;
+
+	while ( count( $sold_set ) < $n ) {
+		$sold = count( $sold_set );
+		$locked_nums = array();
+		foreach ( $prize_list as $prize ) {
+			$t = (int) $prize['threshold'];
+			if ( $t <= 0 ) {
+				continue;
+			}
+			if ( $sold < (int) ceil( ( $t / 100 ) * $n ) ) {
+				$locked_nums[ (int) $prize['num'] ] = true;
+			}
+		}
+
+		$sellable = array();
+		for ( $i = 1; $i <= $n; $i++ ) {
+			if ( isset( $sold_set[ $i ] ) ) {
+				continue;
+			}
+			if ( isset( $locked_nums[ $i ] ) ) {
+				continue;
+			}
+			$sellable[] = $i;
+		}
+
+		if ( empty( $sellable ) ) {
+			$deadlock = true;
+			break;
+		}
+
+		$pick              = $sellable[ array_rand( $sellable ) ];
+		$sold_set[ $pick ] = true;
+	}
+
+	$assigned_prize = 0;
+	foreach ( $prize_list as $prize ) {
+		if ( isset( $sold_set[ (int) $prize['num'] ] ) ) {
+			++$assigned_prize;
+		}
+	}
+
+	WP_CLI::log( sprintf( 'Simulated sold: %d / %d', count( $sold_set ), $n ) );
+	WP_CLI::log( sprintf( 'Prize numbers sold: %d / %d', $assigned_prize, count( $prize_list ) ) );
+
+	if ( $deadlock ) {
+		WP_CLI::warning( sprintf( 'Deadlock at %d sold — infeasible ticket-%% config: %s', count( $sold_set ), $thr_raw ?: '(none)' ) );
+		return;
+	}
+
+	if ( count( $sold_set ) >= $n && $assigned_prize === count( $prize_list ) ) {
+		WP_CLI::success( 'Full sellout: every prize number inside 1..n was sold (fixed pool, no N+held expansion).' );
+	} else {
+		WP_CLI::warning( 'Simulation ended without assigning every prize number.' );
+	}
+}
+
+WP_CLI::add_command( 'nera-iwt simulate-sellout', 'nera_iwt_cli_simulate_sellout' );

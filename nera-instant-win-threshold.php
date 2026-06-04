@@ -3,7 +3,7 @@
  * Plugin Name: Nera – Instant Win Rules
  * Plugin URI: https://github.com/Nera-Marketing/nera-instant-win-threshold
  * Description: Instant win rule types (instant, scheduled, ticket sold %), public prize visibility, and optional instant-win UI overrides for Lottery for WooCommerce.
- * Version: 1.0.27
+ * Version: 1.0.28
  * Author: Nera
  * Text Domain: nera-instant-win-threshold
  * Requires at least: 6.0
@@ -16,7 +16,7 @@ defined( 'ABSPATH' ) || exit;
 
 use YahnisElsts\PluginUpdateChecker\v5p5\Vcs\GitHubApi;
 
-define( 'NERA_IWT_VERSION', '1.0.27' );
+define( 'NERA_IWT_VERSION', '1.0.28' );
 define( 'NERA_IWT_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'NERA_IWT_PLUGIN_FILE', __FILE__ );
 
@@ -25,7 +25,7 @@ define( 'NERA_IWT_PLUGIN_FILE', __FILE__ );
  * Fallback when a product has no Ticket Number Max meta: ticket numbers are drawn from  1 … NERA_IWT_MAX_TICKET_NUMBER.
  * Prefer setting Ticket Number Max on each lottery product (Ticket Generation Settings).
  * When 0 or unset in wp-config (after removing the default below): falls back to
- * _lty_maximum_tickets + count( nera_iwt_get_unavailable_prize_ticket_numbers() ).
+ * _lty_maximum_tickets (reserve-slots; no +held pool expansion).
  * Override in wp-config.php:  define( 'NERA_IWT_MAX_TICKET_NUMBER', 49999 );
  * Use 0 for LFW-style cap + unavailable offset:  define( 'NERA_IWT_MAX_TICKET_NUMBER', 0 );
  */
@@ -270,6 +270,7 @@ require_once NERA_IWT_PLUGIN_DIR . 'inc/rule-public-display.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-ticket-generation-rule-guard.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-sequential-ticket-guard.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-instant-win-ticket-range.php';
+require_once NERA_IWT_PLUGIN_DIR . 'inc/ticket-pool-feasibility.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-product-ticket-pool-max.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-instant-win-export-import.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/visibility.php';

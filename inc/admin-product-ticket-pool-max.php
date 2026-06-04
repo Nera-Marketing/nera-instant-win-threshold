@@ -87,7 +87,19 @@ function nera_iwt_save_product_ticket_number_max( $post_id ) {
 		return;
 	}
 
-	update_post_meta( $post_id, '_nera_iwt_ticket_number_max', min( $n, 99999999 ) );
+	$n = min( $n, 99999999 );
+
+	$product = wc_get_product( $post_id );
+	if ( $product && function_exists( 'nera_iwt_validate_product_ticket_number_max_vs_lfw' ) ) {
+		$check = nera_iwt_validate_product_ticket_number_max_vs_lfw( $product, $n );
+		if ( is_wp_error( $check ) ) {
+			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+			error_log( 'nera-instant-win-threshold: ' . $check->get_error_message() );
+			return;
+		}
+	}
+
+	update_post_meta( $post_id, '_nera_iwt_ticket_number_max', $n );
 }
 
 add_action( 'woocommerce_process_product_meta_lottery', 'nera_iwt_save_product_ticket_number_max', 15 );

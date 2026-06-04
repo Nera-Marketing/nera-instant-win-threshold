@@ -15,7 +15,7 @@
  *
  *   • Product meta `_nera_iwt_ticket_number_max` > 0  →  that value (Ticket Generation Settings in admin).
  *   • Else NERA_IWT_MAX_TICKET_NUMBER > 0  →  constant (wp-config / mu-plugin shim fallback).
- *   • Else  →  1 … _lty_maximum_tickets + count( unavailable prize-hold tickets ).
+ *   • Else  →  1 … _lty_maximum_tickets (reserve-slots: locked prizes reserve slots inside the pool; no +held expansion).
  *
  * Set NERA_IWT_MAX_TICKET_NUMBER to 0 in wp-config.php for pure LFW-style ceiling when no product meta.
  *
@@ -71,24 +71,45 @@ function nera_iwt_resolve_shuffle_random_pool_max( $product ) {
 		$base = max( 1, absint( $product->get_lty_maximum_tickets() ) );
 	}
 
-	$extra = 0;
-	if ( function_exists( 'nera_iwt_get_unavailable_prize_ticket_numbers' ) ) {
-		$held = nera_iwt_get_unavailable_prize_ticket_numbers( $product );
-		if ( is_array( $held ) ) {
-			$extra = count( $held );
+	if ( $configured > 0 ) {
+		// Fixed pool (reserve-slots): ceiling is N, not N + locked prizes.
+		return max( $configured, $base );
+	}
+
+	// No configured cap: pool covers maximum ticket sales only (no +held expansion).
+	return $base;
+}
+
+/**
+ * Whether shuffle/random generation returned fewer numbers than requested because the
+ * unlocked pool is exhausted (typically infeasible ticket-% reserve-slots config).
+ *
+ * @param WC_Product $product   Lottery product.
+ * @param int        $requested Requested quantity.
+ * @param array      $generated Generated ticket numbers.
+ * @return bool
+ */
+function nera_iwt_is_pool_generation_shortfall( $product, $requested, $generated, $extra_sold = 0 ) {
+	$requested = max( 1, (int) $requested );
+	$generated = is_array( $generated ) ? $generated : array();
+	if ( count( $generated ) >= $requested ) {
+		return false;
+	}
+
+	$max = nera_iwt_resolve_shuffle_random_pool_max( $product );
+	if ( $max <= 0 ) {
+		return false;
+	}
+
+	$lookup = nera_iwt_generator_excluded_ticket_lookup( $product, $extra_sold );
+	$unlocked_remaining = 0;
+	for ( $i = 1; $i <= $max; $i++ ) {
+		if ( ! isset( $lookup[ (string) $i ] ) ) {
+			++$unlocked_remaining;
 		}
 	}
 
-	$lfw_based = max( 1, $base + $extra );
-
-	if ( $configured > 0 ) {
-		// The configured cap sets the preferred pool ceiling but must never fall
-		// below the product's own maximum tickets — if it did, the pool would be
-		// exhausted before all buyer slots are filled, causing checkout errors.
-		return max( $configured, $lfw_based );
-	}
-
-	return $lfw_based;
+	return $unlocked_remaining < ( $requested - count( $generated ) );
 }
 
 /**
@@ -107,7 +128,7 @@ function nera_iwt_resolve_shuffle_random_pool_max( $product ) {
  * @param WC_Product $product Lottery product.
  * @return array<string,bool>
  */
-function nera_iwt_generator_excluded_ticket_lookup( $product ) {
+function nera_iwt_generator_excluded_ticket_lookup( $product, $extra_sold = 0 ) {
 	$lookup = array();
 
 	if ( is_object( $product ) && method_exists( $product, 'get_placed_tickets' ) ) {
@@ -117,7 +138,7 @@ function nera_iwt_generator_excluded_ticket_lookup( $product ) {
 	}
 
 	if ( function_exists( 'nera_iwt_get_unavailable_prize_ticket_numbers' ) ) {
-		foreach ( (array) nera_iwt_get_unavailable_prize_ticket_numbers( $product ) as $n ) {
+		foreach ( (array) nera_iwt_get_unavailable_prize_ticket_numbers( $product, $extra_sold ) as $n ) {
 			$lookup[ (string) $n ] = true;
 		}
 	}
@@ -151,9 +172,36 @@ if ( ! function_exists( 'lty_get_random_ticket_numbers' ) ) {
 		$max      = nera_iwt_resolve_shuffle_random_pool_max( $product );
 		$quantity = max( 1, (int) $quantity );
 
-		// Excludes placed tickets AND currently-locked instant-win prize numbers.
-		$placed_lookup = nera_iwt_generator_excluded_ticket_lookup( $product );
+		// Resolve in-flight projection (0 if not set; never falls back to $quantity).
+		$extra_sold = function_exists( 'nera_iwt_get_generation_projection_extra_sold' )
+			? nera_iwt_get_generation_projection_extra_sold( $product )
+			: 0;
 
+		// Excludes placed tickets AND currently-locked instant-win prize numbers (with projection).
+		$placed_lookup = nera_iwt_generator_excluded_ticket_lookup( $product, $extra_sold );
+
+		// Threshold above which we never materialise the full range in memory.
+		$materialize_max = defined( 'NERA_IWT_SHUFFLE_MATERIALIZE_MAX' )
+			? (int) NERA_IWT_SHUFFLE_MATERIALIZE_MAX
+			: 50000;
+
+		if ( $max <= $materialize_max ) {
+			// Small pool: exact drain — guarantees all remaining numbers are returned when
+			// the buyer requests >= pool size (no random under-fill near exhaustion).
+			$exclude_int    = array_map( 'intval', array_keys( $placed_lookup ) );
+			$pool           = array_values( array_diff( range( 1, $max ), $exclude_int ) );
+			if ( empty( $pool ) ) {
+				return array();
+			}
+			shuffle( $pool );
+			$ticket_numbers = array_map( 'strval', array_slice( $pool, 0, $quantity ) );
+			if ( nera_iwt_is_pool_generation_shortfall( $product, $quantity, $ticket_numbers, $extra_sold ) ) {
+				do_action( 'nera_iwt_pool_generation_exhausted', $product, $quantity, $ticket_numbers );
+			}
+			return $ticket_numbers;
+		}
+
+		// Large pool: rejection sampling — never allocates the whole range.
 		$ticket_numbers = array();
 		$picked         = array();
 		// Safety cap: avoids infinite loops when the pool is nearly exhausted.
@@ -167,6 +215,10 @@ if ( ! function_exists( 'lty_get_random_ticket_numbers' ) ) {
 				$ticket_numbers[] = $num;
 			}
 			++$attempts;
+		}
+
+		if ( nera_iwt_is_pool_generation_shortfall( $product, $quantity, $ticket_numbers, $extra_sold ) ) {
+			do_action( 'nera_iwt_pool_generation_exhausted', $product, $quantity, $ticket_numbers );
 		}
 
 		return $ticket_numbers;
@@ -202,8 +254,13 @@ if ( ! function_exists( 'lty_get_remaining_shuffle_ticket_numbers' ) ) {
 		$max      = nera_iwt_resolve_shuffle_random_pool_max( $product );
 		$quantity = max( 1, (int) $quantity );
 
-		// Excludes placed tickets AND currently-locked instant-win prize numbers.
-		$placed_lookup = nera_iwt_generator_excluded_ticket_lookup( $product );
+		// Resolve in-flight projection (0 if not set; never falls back to $quantity).
+		$extra_sold = function_exists( 'nera_iwt_get_generation_projection_extra_sold' )
+			? nera_iwt_get_generation_projection_extra_sold( $product )
+			: 0;
+
+		// Excludes placed tickets AND currently-locked instant-win prize numbers (with projection).
+		$placed_lookup = nera_iwt_generator_excluded_ticket_lookup( $product, $extra_sold );
 
 		// Threshold above which we never materialise the full range in memory.
 		$materialize_max = defined( 'NERA_IWT_SHUFFLE_MATERIALIZE_MAX' )
@@ -218,7 +275,11 @@ if ( ! function_exists( 'lty_get_remaining_shuffle_ticket_numbers' ) ) {
 				return array();
 			}
 			shuffle( $pool );
-			return array_map( 'strval', array_slice( $pool, 0, $quantity ) );
+			$ticket_numbers = array_map( 'strval', array_slice( $pool, 0, $quantity ) );
+			if ( nera_iwt_is_pool_generation_shortfall( $product, $quantity, $ticket_numbers, $extra_sold ) ) {
+				do_action( 'nera_iwt_pool_generation_exhausted', $product, $quantity, $ticket_numbers );
+			}
+			return $ticket_numbers;
 		}
 
 		// Large pool: rejection sampling — never allocates the whole range.
@@ -234,6 +295,10 @@ if ( ! function_exists( 'lty_get_remaining_shuffle_ticket_numbers' ) ) {
 				$ticket_numbers[] = $num;
 			}
 			++$attempts;
+		}
+
+		if ( nera_iwt_is_pool_generation_shortfall( $product, $quantity, $ticket_numbers, $extra_sold ) ) {
+			do_action( 'nera_iwt_pool_generation_exhausted', $product, $quantity, $ticket_numbers );
 		}
 
 		return $ticket_numbers;

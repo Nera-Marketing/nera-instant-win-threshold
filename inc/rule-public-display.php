@@ -484,10 +484,11 @@ function nera_iwt_get_log_public_rule_type( $log_id ) {
 /**
  * Sold tickets as a percentage of maximum tickets for the lottery product.
  *
- * @param WC_Product $product Product.
+ * @param WC_Product $product    Product.
+ * @param int        $extra_sold Additional in-flight tickets to project into the sold count. Default 0.
  * @return float|null Percent 0–100, or null if maximum is unknown/zero.
  */
-function nera_iwt_get_lottery_ticket_sold_percent( $product ) {
+function nera_iwt_get_lottery_ticket_sold_percent( $product, $extra_sold = 0 ) {
 	if ( ! $product instanceof WC_Product ) {
 		return null;
 	}
@@ -503,6 +504,7 @@ function nera_iwt_get_lottery_ticket_sold_percent( $product ) {
 	if ( method_exists( $product, 'get_purchased_ticket_count' ) ) {
 		$purchased = absint( $product->get_purchased_ticket_count() );
 	}
+	$purchased += max( 0, (int) $extra_sold );
 	return ( $purchased / $max ) * 100.0;
 }
 
