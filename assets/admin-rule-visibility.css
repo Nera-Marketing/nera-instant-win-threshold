@@ -287,6 +287,20 @@ body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-status-dot.
 	background: #28a745; /* green */
 }
 
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-won-order {
+	display: block;
+	margin-top: 4px;
+}
+
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-won-order a {
+	font-weight: 600;
+	text-decoration: none;
+}
+
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-won-order a:hover {
+	text-decoration: underline;
+}
+
 body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-status-dot.nera-iwt-dot-won {
 	background: #f59e0b; /* orange */
 }

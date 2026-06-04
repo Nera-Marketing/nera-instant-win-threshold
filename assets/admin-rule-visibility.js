@@ -913,7 +913,7 @@
 			return 'Not available yet';
 		}
 		if (status === 'won') {
-			return 'Available — winner assigned';
+			return 'Winner assigned';
 		}
 		return 'Available';
 	}
@@ -936,8 +936,8 @@
 				return;
 			}
 
-			// Anchor the dot to the "ID:" <small> in the first cell (fallback: the cell).
-			var $anchor = $tr.find('td').first().find('small').first();
+			// Anchor the dot to the "ID:" <small> only (not the order-number line below it).
+			var $anchor = $tr.find('td').first().find('small').not('.nera-iwt-rule-won-order').first();
 			if (!$anchor.length) {
 				$anchor = $tr.find('td').first();
 			}

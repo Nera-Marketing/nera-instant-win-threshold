@@ -273,6 +273,7 @@ require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-instant-win-ticket-range.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/ticket-pool-feasibility.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-product-ticket-pool-max.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-instant-win-export-import.php';
+require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-instant-winner-order-link.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/visibility.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/rest-instant-wins.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/woocommerce-lottery-template-override.php';

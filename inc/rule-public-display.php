@@ -877,11 +877,31 @@ function nera_iwt_admin_rule_is_available( $type, $pct, $sched_gmt, $sched_end_g
 }
 
 /**
+ * Whether an instant-winner rule already has an assigned winner (lty_won log).
+ *
+ * @param int $rule_id Rule post ID.
+ */
+function nera_iwt_rule_has_assigned_winner( int $rule_id ): bool {
+	if ( $rule_id <= 0 || ! function_exists( 'lty_get_instant_winner_log_id_by_rule_id' ) || ! function_exists( 'lty_get_instant_winner_log' ) ) {
+		return false;
+	}
+
+	$log_id = lty_get_instant_winner_log_id_by_rule_id( $rule_id, 0 );
+	if ( ! $log_id ) {
+		return false;
+	}
+
+	$log = lty_get_instant_winner_log( $log_id );
+
+	return is_object( $log ) && method_exists( $log, 'has_status' ) && $log->has_status( 'lty_won' );
+}
+
+/**
  * Resolve the admin row status for colour-coding the prizes table.
  *
- *  - 'locked'    → not yet available (e.g. ticket-% threshold not reached) → red.
- *  - 'won'       → available and already has a winner                      → orange.
- *  - 'available' → available and not yet won                              → green.
+ *  - 'won'       → winner already assigned (orange) — takes precedence over gate/schedule.
+ *  - 'locked'    → not yet available and no winner (red).
+ *  - 'available' → available and not yet won (green).
  *
  * @param int             $rule_id       Rule post ID.
  * @param string          $type          Rule type slug.
@@ -892,21 +912,17 @@ function nera_iwt_admin_rule_is_available( $type, $pct, $sched_gmt, $sched_end_g
  * @return string One of 'locked' | 'won' | 'available'.
  */
 function nera_iwt_admin_rule_status( $rule_id, $type, $pct, $sched_gmt, $sched_end_gmt, $product ) {
+	$rule_id = (int) $rule_id;
+
+	if ( nera_iwt_rule_has_assigned_winner( $rule_id ) ) {
+		return 'won';
+	}
+
 	if ( ! nera_iwt_admin_rule_is_available( $type, $pct, $sched_gmt, $sched_end_gmt, $product ) ) {
 		return 'locked';
 	}
 
-	$won = get_posts(
-		array(
-			'post_type'      => 'lty_ins_winner_log',
-			'post_parent'    => (int) $rule_id,
-			'post_status'    => 'lty_won',
-			'posts_per_page' => 1,
-			'fields'         => 'ids',
-		)
-	);
-
-	return empty( $won ) ? 'available' : 'won';
+	return 'available';
 }
 
 /**
@@ -931,6 +947,9 @@ function nera_iwt_admin_rule_column_cell( $instant_winner ) {
 	$sched_end_local = nera_iwt_schedule_gmt_to_local_input( $sched_end_gmt );
 
 	$product = ( $post instanceof WP_Post && 'product' === $post->post_type ) ? wc_get_product( $post->ID ) : null;
+	if ( ( ! $product instanceof WC_Product ) && method_exists( $instant_winner, 'get_product_id' ) ) {
+		$product = wc_get_product( (int) $instant_winner->get_product_id() );
+	}
 	if ( ! $product instanceof WC_Product || ! function_exists( 'lty_is_lottery_product' ) || ! lty_is_lottery_product( $product ) ) {
 		$product = null;
 	}
