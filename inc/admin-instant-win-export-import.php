@@ -185,3 +185,201 @@ function nera_iwt_import_apply_nera_fields( $importer ) {
 	fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose
 }
 add_action( 'lty_lottery_instant-winner-rule_imported', 'nera_iwt_import_apply_nera_fields' );
+
+// ─── Cross-product copy + import range guard ────────────────────────────────────
+
+/**
+ * Resolve the launch (target) lottery product ID for the current import request.
+ *
+ * LFW posts the `extra_data` JSON (containing `product_id`) on BOTH the
+ * `lty_upload_import_form` and `lty_run_import` AJAX requests.
+ *
+ * @return int Product ID, or 0 when not resolvable.
+ */
+function nera_iwt_get_import_launch_product_id() {
+	// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+	$raw = isset( $_REQUEST['extra_data'] ) ? wp_unslash( $_REQUEST['extra_data'] ) : '';
+	if ( '' === $raw || ! is_string( $raw ) ) {
+		return 0;
+	}
+
+	$data = json_decode( $raw, true );
+
+	return ( is_array( $data ) && isset( $data['product_id'] ) ) ? absint( $data['product_id'] ) : 0;
+}
+
+/**
+ * RFC-4180 row encoder: quote a field only when it contains " , CR or LF; double embedded quotes.
+ *
+ * Used instead of fputcsv() because fputcsv()'s escape handling with escape="\0" is
+ * version-dependent; this matches how LFW re-reads the file (enclosure '"', escape "\0").
+ *
+ * @param array $fields Row fields.
+ * @return string Encoded CSV line (no trailing newline).
+ */
+function nera_iwt_csv_encode_row( array $fields ) {
+	$out = array();
+	foreach ( $fields as $f ) {
+		$f = (string) $f;
+		if ( preg_match( '/["\n\r,]/', $f ) ) {
+			$f = '"' . str_replace( '"', '""', $f ) . '"';
+		}
+		$out[] = $f;
+	}
+
+	return implode( ',', $out );
+}
+
+/**
+ * Rewrite the uploaded import CSV so rows referencing a rule that does NOT belong to the
+ * target product are created fresh under the target (rather than silently updating — and
+ * corrupting — the source product's rules).
+ *
+ * For each data row whose `ID` references a rule whose post_parent is not the target product,
+ * blank the `ID` cell (forces LFW's CREATE-under-target branch) and rewrite the `Product ID`
+ * cell to the target. Same-product re-import (ID belongs to target) is left untouched, so the
+ * intended ID-based UPDATE flow still works.
+ *
+ * @param string $file              Absolute path to the uploaded CSV.
+ * @param int    $target_product_id Launch product ID.
+ * @return void
+ */
+function nera_iwt_blank_foreign_ids_in_import_csv( $file, $target_product_id ) {
+	// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen
+	$handle = fopen( $file, 'r' );
+	if ( false === $handle ) {
+		return;
+	}
+
+	$headers = fgetcsv( $handle, 0, ',', '"', "\0" );
+	if ( ! is_array( $headers ) ) {
+		fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose
+		return;
+	}
+
+	// Column detection only: trim + strip the UTF-8 BOM that prefixes headers[0]
+	// (the exporter writes a BOM; LFW strips it in read_file()). 'ID' is the FIRST
+	// exported column, so without this strip array_search( 'ID' ) would miss it.
+	$detect = array_map( 'trim', $headers );
+	if ( isset( $detect[0] ) ) {
+		$detect[0] = preg_replace( '/^\xEF\xBB\xBF/', '', $detect[0] );
+	}
+
+	$col_id  = array_search( 'ID', $detect, true );
+	$col_pid = array_search( 'Product ID', $detect, true );
+	if ( false === $col_id ) {
+		fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose
+		return; // Not our CSV shape — leave it alone.
+	}
+
+	$rows   = array();
+	$rows[] = $headers; // Header row written back verbatim (preserves BOM).
+
+	while ( false !== ( $r = fgetcsv( $handle, 0, ',', '"', "\0" ) ) ) { // phpcs:ignore WordPress.CodeAnalysis.AssignmentInCondition.FoundInWhileCondition
+		if ( is_array( $r ) ) {
+			$rid = isset( $r[ $col_id ] ) ? absint( $r[ $col_id ] ) : 0;
+			if ( $rid > 0 && (int) wp_get_post_parent_id( $rid ) !== (int) $target_product_id ) {
+				$r[ $col_id ] = ''; // Force CREATE under the target product.
+				if ( false !== $col_pid ) {
+					$r[ $col_pid ] = (string) $target_product_id;
+				}
+			}
+		}
+		$rows[] = $r;
+	}
+
+	fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose
+
+	// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen
+	$out = fopen( $file, 'w' );
+	if ( false === $out ) {
+		return;
+	}
+	foreach ( $rows as $row ) {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite
+		fwrite( $out, nera_iwt_csv_encode_row( (array) $row ) . "\n" );
+	}
+	fclose( $out ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose
+}
+
+/**
+ * On upload of an instant-winner-rule import CSV, rewrite it for safe cross-product copy.
+ *
+ * Hooks WordPress core `add_attachment`, which fires inside LFW's handle_upload() during the
+ * `lty_upload_import_form` AJAX request — after LFW has already verified the import nonce and
+ * capability. Fires once per upload; the rewritten file is what every later run_import() batch
+ * re-reads.
+ *
+ * @param int $attachment_id Newly inserted attachment ID.
+ * @return void
+ */
+function nera_iwt_rewrite_import_csv_for_cross_product( $attachment_id ) {
+	if ( ! wp_doing_ajax() ) {
+		return;
+	}
+
+	// phpcs:disable WordPress.Security.NonceVerification.Missing
+	$action      = isset( $_POST['action'] ) ? sanitize_key( wp_unslash( $_POST['action'] ) ) : '';
+	$action_type = isset( $_POST['action_type'] ) ? sanitize_key( wp_unslash( $_POST['action_type'] ) ) : '';
+	// phpcs:enable WordPress.Security.NonceVerification.Missing
+
+	if ( 'lty_upload_import_form' !== $action || 'instant-winner-rule' !== $action_type ) {
+		return;
+	}
+
+	// Defensive re-check (LFW already verified these upstream in upload_import_form()).
+	if ( ! check_ajax_referer( 'lty-import', 'lty_security', false ) || ! current_user_can( 'import' ) ) {
+		return;
+	}
+
+	$target = nera_iwt_get_import_launch_product_id();
+	if ( $target <= 0 ) {
+		return;
+	}
+
+	$file = get_attached_file( $attachment_id );
+	if ( ! $file || ! is_readable( $file ) || ! is_writable( $file ) ) {
+		return;
+	}
+
+	nera_iwt_blank_foreign_ids_in_import_csv( $file, $target );
+}
+add_action( 'add_attachment', 'nera_iwt_rewrite_import_csv_for_cross_product' );
+
+/**
+ * Enforce the numeric ticket-pool range on import rows.
+ *
+ * LFW's importer does not range-check ticket numbers (that guard otherwise only runs on the
+ * inline Add/Save AJAX flows). This filter fires in validate_item() for all display modes;
+ * returning a WP_Error marks the row failed with a message and the rest of the batch continues.
+ * Only all-digit ticket strings are range-checked (prefixed/suffixed values are skipped).
+ *
+ * @param mixed $is_invalid Current validation result (false = valid, WP_Error/string = invalid).
+ * @param array $item       Parsed import row.
+ * @return mixed
+ */
+function nera_iwt_import_validate_ticket_range( $is_invalid, $item ) {
+	if ( ! empty( $is_invalid ) ) {
+		return $is_invalid; // Already failing — preserve it.
+	}
+
+	if ( ! function_exists( 'nera_iwt_validate_instant_win_ticket_number_range' ) ) {
+		return $is_invalid;
+	}
+
+	$target = nera_iwt_get_import_launch_product_id();
+	if ( $target <= 0 ) {
+		return $is_invalid;
+	}
+
+	$product = wc_get_product( $target );
+	if ( ! $product ) {
+		return $is_invalid;
+	}
+
+	$ticket = isset( $item['ticket_number'] ) ? $item['ticket_number'] : '';
+	$result = nera_iwt_validate_instant_win_ticket_number_range( $product, $ticket );
+
+	return is_wp_error( $result ) ? $result : $is_invalid;
+}
+add_filter( 'lty_validate_instant_winner_rule_import_item', 'nera_iwt_import_validate_ticket_range', 10, 2 );
