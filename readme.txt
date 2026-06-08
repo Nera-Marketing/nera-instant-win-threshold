@@ -31,6 +31,7 @@ This plugin extends **Lottery for WooCommerce** (Giveaway for WooCommerce) with:
 * Fix — Part A: thread a projected in-flight ticket count through threshold evaluation during checkout so that a purchase which crosses a ticket-sold-% threshold releases the prize number into the same order's assignable pool (no longer requires a subsequent purchase or cron run).
 * Fix — Part B: `lty_get_random_ticket_numbers()` now uses the same exact-drain strategy as shuffle for pools ≤ NERA_IWT_SHUFFLE_MATERIALIZE_MAX (default 50000), eliminating random under-fill near pool exhaustion on `random`-type products.
 * Hard guarantee: automatic shuffle/random products at full sellout assign every prize ticket number (instant + ticket-%) to a buyer, whether bought in one order or split across many.
+* Admin — Won prizes: order link below status dot in the Instant Win rules table.
 
 = 1.0.27 =
 * Fix — Ticket generator excludes locked instant-win prize numbers on every path (shuffle/random pools); REST API `woocommerce_after_order_object_save` hold sync before LFW assigns tickets.
