@@ -213,6 +213,40 @@ function nera_iwt_import_apply_nera_fields( $importer ) {
 	}
 
 	fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose
+
+	// Stamp lty_lottery_id + lottery start/end dates onto the logs LFW just imported.
+	//
+	// LFW's importer creates each rule's instant-winner log via lty_create_new_instant_winner_log()
+	// but never sets `lty_lottery_id` (or the start/end dates) — those are normally written by
+	// LTY_Lottery_Product_Type_Handler::maybe_update_instant_winner_log(), which only runs on
+	// product SAVE, not during import. The admin list table and lty_get_instant_winner_log_ids()
+	// (the public winning-ticket lookup) both filter logs by `lty_lottery_id = product_id`, so an
+	// unstamped imported log is invisible in the admin list AND never fires a win. The routine is
+	// idempotent and locates logs by rule_id + relist_count (not by the missing lty_lottery_id), so
+	// it backfills exactly the logs LFW just created for this product at the current relist count.
+	if ( class_exists( 'LTY_Lottery_Product_Type_Handler' )
+		&& method_exists( 'LTY_Lottery_Product_Type_Handler', 'maybe_update_instant_winner_log' ) ) {
+		$product = wc_get_product( $product_id );
+		if ( $product ) {
+			LTY_Lottery_Product_Type_Handler::maybe_update_instant_winner_log( $product );
+		}
+	}
+
+	// Flush the product's cached instant-winner-rules count so the admin list paginates correctly.
+	//
+	// get_instant_winners_rules_count() caches its result in the transient
+	// lty_instant_winner_rules_count_<id> for an hour, and the Instant Win Prizes tab derives its
+	// page_count from that cached value (while the row list + "N items" label come from the uncached
+	// rule-id query). LFW's own import hook clears only the prize-group transient, not this one — so a
+	// stale count (e.g. 0 from a freshly-created product) caps the list at a single page and hides
+	// every imported rule beyond the first page. Reuse LFW's handler, which clears the rules-count
+	// transient (plus placed/purchased + group counts) for the product.
+	if ( class_exists( 'LTY_Transient_Handler' )
+		&& method_exists( 'LTY_Transient_Handler', 'delete_product_transients' ) ) {
+		LTY_Transient_Handler::delete_product_transients( $product_id );
+	} else {
+		delete_transient( "lty_instant_winner_rules_count_{$product_id}" );
+	}
 }
 add_action( 'lty_lottery_instant-winner-rule_imported', 'nera_iwt_import_apply_nera_fields' );
 
