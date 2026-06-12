@@ -4,7 +4,7 @@ Tags: woocommerce, lottery, instant win, competition, giveaway
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.0.29
+Stable tag: 1.0.30
 License: GPLv2 or later
 
 Instant win rule types, public prize visibility, and optional instant-win UI overrides for Lottery for WooCommerce.
@@ -26,6 +26,10 @@ This plugin extends **Lottery for WooCommerce** (Giveaway for WooCommerce) with:
 3. Configure instant win rules and visibility on competition products as supported by your theme and Lottery for WooCommerce.
 
 == Changelog ==
+
+= 1.0.30 =
+* Fix — Export/import: after each import batch, stamp `lty_lottery_id` and lottery start/end dates on imported instant-winner logs via LFW's `maybe_update_instant_winner_log()` so imported prizes appear in the admin list and public winning-ticket lookup can match them.
+* Fix — Export/import: flush LFW's instant-winner-rules count transient after import so the Instant Win Prizes tab paginates correctly (no stale cached count hiding rules beyond page 1).
 
 = 1.0.29 =
 * Admin — Export/import: batch-bounded CSV re-read when applying Nera Rule Type / Ticket % after each import batch (uses `position` + `get_position_count()` — O(N) total instead of re-reading the full file every batch).
