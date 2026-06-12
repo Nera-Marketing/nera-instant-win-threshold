@@ -4,7 +4,7 @@ Tags: woocommerce, lottery, instant win, competition, giveaway
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.0.28
+Stable tag: 1.0.29
 License: GPLv2 or later
 
 Instant win rule types, public prize visibility, and optional instant-win UI overrides for Lottery for WooCommerce.
@@ -26,6 +26,17 @@ This plugin extends **Lottery for WooCommerce** (Giveaway for WooCommerce) with:
 3. Configure instant win rules and visibility on competition products as supported by your theme and Lottery for WooCommerce.
 
 == Changelog ==
+
+= 1.0.29 =
+* Admin — Export/import: batch-bounded CSV re-read when applying Nera Rule Type / Ticket % after each import batch (uses `position` + `get_position_count()` — O(N) total instead of re-reading the full file every batch).
+* Admin — Export/import: safe cross-product copy — on upload, blank foreign rule IDs and rewrite Product ID so rows from another competition create fresh rules under the target product instead of corrupting the source.
+* Admin — Export/import: enforce numeric ticket-pool range on import rows (same bounds as Add Rule / Save; all-digit ticket numbers only).
+* Admin — Export/import: block group-mode CSV rows (rows with Group Prize Title) from importing into a Default-mode product — fails the row with a clear error instead of silently flattening and losing prize-group association. Override: `nera_iwt_allow_import_mode_mismatch` filter.
+* Admin — Export/import: document that Schedule datetimes are not exported (Schedule Prize disabled by default); Rule Type + Ticket % round-trip only.
+* REST — Group display mode: `GET /wp-json/nera/v1/instant-wins/{product_id}` returns a group-shaped payload when the product's Instant Win Prize Display Mode is "Display Prizes by Group" — one entry per LFW prize group with `tickets[]`, merged visibility (instant > ticket-% > schedule), and shared schedule field derivation.
+* REST — Default display mode payload unchanged except new top-level `display_mode` key (`default` | `group`).
+* REST — Refactor schedule field derivation into shared helper used by both default and group branches.
+* Removed — Internal dev test scripts (`tests/test-buy-all-rounds-e2e.php`, `tests/test-projection-drain.php`); not shipped in release zip.
 
 = 1.0.28 =
 * Fix — Part A: thread a projected in-flight ticket count through threshold evaluation during checkout so that a purchase which crosses a ticket-sold-% threshold releases the prize number into the same order's assignable pool (no longer requires a subsequent purchase or cron run).
