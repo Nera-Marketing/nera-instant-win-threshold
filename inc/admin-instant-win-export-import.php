@@ -8,9 +8,9 @@
  *
  * Import — LFW's get_map_columns() has no filter, so nera columns are not
  * automatically parsed into $item during the normal flow. Instead we hook:
- *   lty_lottery_instant-winner-rule_imported (fires after every row is processed)
- * then re-read the CSV, extract the nera columns, find each rule by
- * product_id + ticket_number, and call nera_iwt_persist_rule_visibility_meta()
+ *   lty_lottery_instant-winner-rule_imported (fires once after each import batch)
+ * then re-read that batch's rows from the CSV, extract the nera columns, find each
+ * rule by product_id + ticket_number, and call nera_iwt_persist_rule_visibility_meta()
  * which also syncs meta to child log posts automatically.
  *
  * @package Nera_Instant_Win_Threshold
@@ -40,9 +40,11 @@ add_filter( 'lty_instant_winner_rules_export_heading', 'nera_iwt_export_add_head
 /**
  * Append Nera field values to each instant-winner-rule export row.
  *
- * Schedule fields are exported as local wall-clock strings (nera_iwt_schedule_at_local /
- * nera_iwt_schedule_end_local) so they round-trip correctly through
- * nera_iwt_persist_rule_visibility_meta() on import.
+ * Only Rule Type and Ticket % are exported. Schedule datetimes
+ * (nera_iwt_schedule_at_local / nera_iwt_schedule_end_local) are intentionally NOT
+ * included, so a Schedule-type rule does not round-trip through import — it imports as a
+ * schedule rule with no dates (treated as ungated). Schedule Prize is disabled by default
+ * (NERA_IWT_ENABLE_SCHEDULE_PRIZE_TYPE), so this is a known, accepted limitation.
  *
  * @param array  $row                 LFW row data.
  * @param object $instant_winner_rule Instant winner rule object.
