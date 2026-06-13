@@ -8,7 +8,7 @@
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Fixed numeric pool size N for reserve-slots math (Ticket Number Max or LFW maximum).
+ * Fixed numeric pool size N for reserve-slots math (LFW Maximum Tickets).
  *
  * @param WC_Product $product Lottery product.
  * @return int 0 when unknown.
@@ -223,34 +223,5 @@ function nera_iwt_validate_product_ticket_pct_reserve_slots( $product, array $ru
 		}
 	}
 
-	return true;
-}
-
-/**
- * Ticket Number Max must be >= LFW maximum tickets when both are set.
- *
- * @param WC_Product $product Lottery product.
- * @param int        $ticket_number_max Proposed cap.
- * @return true|WP_Error
- */
-function nera_iwt_validate_product_ticket_number_max_vs_lfw( $product, $ticket_number_max ) {
-	if ( ! $product instanceof WC_Product || $ticket_number_max <= 0 ) {
-		return true;
-	}
-	if ( ! method_exists( $product, 'get_lty_maximum_tickets' ) ) {
-		return true;
-	}
-	$lfw_max = absint( $product->get_lty_maximum_tickets() );
-	if ( $lfw_max > 0 && $ticket_number_max < $lfw_max ) {
-		return new WP_Error(
-			'nera_iwt_ticket_max_below_lfw',
-			sprintf(
-				/* translators: 1: Ticket Number Max, 2: LFW maximum tickets */
-				__( 'Ticket Number Max (%1$d) must be at least the product Maximum Tickets (%2$d) so the full sellout pool can be filled.', 'nera-instant-win-threshold' ),
-				$ticket_number_max,
-				$lfw_max
-			)
-		);
-	}
 	return true;
 }

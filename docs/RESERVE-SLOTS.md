@@ -2,7 +2,7 @@
 
 ## Customer guarantee
 
-For numeric automatic ticket products with **Ticket Number Max** = `N` and **Maximum Tickets** = `N`, when all `N` tickets are sold, every configured instant-win **ticket number** inside `1..N` must be assigned to a buyer (and can become won per LFW rules).
+For numeric automatic ticket products with **Maximum Tickets** = `N`, when all `N` tickets are sold, every configured instant-win **ticket number** inside `1..N` must be assigned to a buyer (and can become won per LFW rules).
 
 ## Mechanism
 

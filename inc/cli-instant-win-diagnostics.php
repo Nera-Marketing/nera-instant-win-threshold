@@ -151,7 +151,7 @@ function nera_iwt_cli_pool_status( array $args, array $assoc_args ) {
 	$held      = function_exists( 'nera_iwt_get_unavailable_prize_ticket_numbers' ) ? nera_iwt_get_unavailable_prize_ticket_numbers( $product ) : array();
 	$placed    = method_exists( $product, 'get_placed_tickets' ) ? count( (array) $product->get_placed_tickets() ) : 0;
 
-	WP_CLI::log( sprintf( 'Pool N (configured): %d', $pool_n ) );
+	WP_CLI::log( sprintf( 'Pool N (LFW maximum): %d', $pool_n ) );
 	WP_CLI::log( sprintf( 'Resolved shuffle/random max: %d', $resolved ) );
 	WP_CLI::log( sprintf( 'LFW maximum tickets: %d', $lfw_max ) );
 	WP_CLI::log( sprintf( 'Placed tickets: %d', $placed ) );
@@ -161,10 +161,6 @@ function nera_iwt_cli_pool_status( array $args, array $assoc_args ) {
 		WP_CLI::warning( 'Resolved max exceeds pool N — legacy +held expansion may still be active (should not happen after reserve-slots fix).' );
 	} elseif ( $resolved === $pool_n || ( $pool_n <= 0 && $resolved === $lfw_max ) ) {
 		WP_CLI::log( 'Pool ceiling matches reserve-slots expectation (no +held expansion).' );
-	}
-
-	if ( $pool_n > 0 && $lfw_max > 0 && $pool_n < $lfw_max ) {
-		WP_CLI::warning( 'Ticket Number Max is below Maximum Tickets — sellout cannot fill all buyer slots.' );
 	}
 
 	WP_CLI::success( 'Pool status complete.' );
