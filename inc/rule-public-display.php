@@ -1144,7 +1144,7 @@ function nera_iwt_admin_enqueue_rule_visibility( $hook_suffix ) {
 		}
 		$l10n_package['instantWinTicketRangeNote'] = sprintf(
 			/* translators: 1: minimum numeric ticket, 2: maximum numeric ticket */
-			__( 'Numeric instant-win ticket numbers must fall within the ticket pool for this product (from the effective Ticket Starting Number through Ticket Number Max in Ticket Generation Settings). If Ticket Number Max is empty, the site fallback or Lottery ticket cap applies. Current allowed numeric range for this product: %1$d–%2$d (inclusive).', 'nera-instant-win-threshold' ),
+			__( 'Numeric instant-win ticket numbers must fall within the ticket pool for this product (from the effective Ticket Starting Number through the Lottery Maximum Tickets cap). Current allowed numeric range for this product: %1$d–%2$d (inclusive).', 'nera-instant-win-threshold' ),
 			$pool_min,
 			$pool_max
 		);

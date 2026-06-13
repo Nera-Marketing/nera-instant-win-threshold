@@ -731,15 +731,6 @@
 		neraIwtMaybeClearInstantWinnersUnsavedAfterTicketPatternFix();
 	});
 
-	function neraIwtRelocateTicketMaxField() {
-		var $mount = $('#nera-iwt-ticket-max-field-mount');
-		var $prefix = $('#_lty_ticket_prefix').closest('.form-field');
-		if ($mount.length && $prefix.length) {
-			$mount.children().insertBefore($prefix);
-			$mount.remove();
-		}
-	}
-
 	function neraIwtAppendInstantWinTicketNote() {
 		var admin = window.neraIwtAdmin;
 		if (!admin || !admin.instantWinTicketRangeNote) {
@@ -967,7 +958,6 @@
 				$g.attr('data-nera-iwt-prev-gen', String($g.val() || ''));
 			}
 		});
-		neraIwtRelocateTicketMaxField();
 		neraIwtAppendInstantWinTicketNote();
 		movePopupFieldsToTop();
 		scheduleColumnReorder();

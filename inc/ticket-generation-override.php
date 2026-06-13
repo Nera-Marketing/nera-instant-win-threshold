@@ -13,11 +13,11 @@
  *
  * Pool upper bound (shuffle + random numeric range):
  *
- *   • Product meta `_nera_iwt_ticket_number_max` > 0  →  that value (Ticket Generation Settings in admin).
- *   • Else NERA_IWT_MAX_TICKET_NUMBER > 0  →  constant (wp-config / mu-plugin shim fallback).
- *   • Else  →  1 … _lty_maximum_tickets (reserve-slots: locked prizes reserve slots inside the pool; no +held expansion).
+ *   1) Product LFW Maximum Tickets > 0  →  that value.
+ *   2) NERA_IWT_MAX_TICKET_NUMBER > 0  →  constant (wp-config / mu-plugin shim fallback).
+ *   3) 0  →  caller uses LFW-style math.
  *
- * Set NERA_IWT_MAX_TICKET_NUMBER to 0 in wp-config.php for pure LFW-style ceiling when no product meta.
+ * Set NERA_IWT_MAX_TICKET_NUMBER to 0 in wp-config.php for pure LFW-style ceiling.
  *
  * @package Nera_Instant_Win_Threshold
  */
@@ -27,21 +27,14 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Configured numeric ticket pool ceiling for shuffle/random pools and instant-win validation.
  *
- * Order: per-product meta `_nera_iwt_ticket_number_max`, then {@see NERA_IWT_MAX_TICKET_NUMBER}, then 0 (caller uses LFW-style math).
+ * Resolution order: 1) product LFW Maximum Tickets, 2) {@see NERA_IWT_MAX_TICKET_NUMBER} constant, 3) 0 (caller uses LFW-style math).
  *
  * @param WC_Product|null $product Lottery product.
  * @return int 0 or inclusive maximum ticket number (at least 1 when non-zero).
  */
 function nera_iwt_get_configured_ticket_pool_max( $product ) {
-	if ( is_object( $product ) && method_exists( $product, 'get_meta' ) ) {
-		$m = absint( $product->get_meta( '_nera_iwt_ticket_number_max', true ) );
-		if ( $m > 0 ) {
-			return max( 1, min( $m, 99999999 ) );
-		}
-	}
-
-	// _nera_iwt_ticket_number_max not configured: default the pool ceiling to the
-	// product's own LFW maximum tickets so the pool always covers every buyer slot.
+	// Default the pool ceiling to the product's own LFW maximum tickets so the
+	// pool always covers every buyer slot.
 	if ( is_object( $product ) && method_exists( $product, 'get_lty_maximum_tickets' ) ) {
 		$lty_max = absint( $product->get_lty_maximum_tickets() );
 		if ( $lty_max > 0 ) {

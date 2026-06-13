@@ -21,13 +21,11 @@ define( 'NERA_IWT_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'NERA_IWT_PLUGIN_FILE', __FILE__ );
 
 /**
- * Upper bound of the ticket-number pool for shuffle and random lottery products
- * Fallback when a product has no Ticket Number Max meta: ticket numbers are drawn from  1 … NERA_IWT_MAX_TICKET_NUMBER.
- * Prefer setting Ticket Number Max on each lottery product (Ticket Generation Settings).
- * When 0 or unset in wp-config (after removing the default below): falls back to
- * _lty_maximum_tickets (reserve-slots; no +held pool expansion).
+ * Fallback numeric ticket-pool ceiling for shuffle/random pools when a product's
+ * LFW Maximum Tickets is 0/unlimited. Normally the pool defaults to the product's
+ * LFW Maximum Tickets; this constant is only the next fallback.
  * Override in wp-config.php:  define( 'NERA_IWT_MAX_TICKET_NUMBER', 49999 );
- * Use 0 for LFW-style cap + unavailable offset:  define( 'NERA_IWT_MAX_TICKET_NUMBER', 0 );
+ * Use 0 for pure LFW-style math:  define( 'NERA_IWT_MAX_TICKET_NUMBER', 0 );
  */
 if ( ! defined( 'NERA_IWT_MAX_TICKET_NUMBER' ) ) {
 	define( 'NERA_IWT_MAX_TICKET_NUMBER', 999 );
@@ -271,7 +269,6 @@ require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-ticket-generation-rule-guard.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-sequential-ticket-guard.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-instant-win-ticket-range.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/ticket-pool-feasibility.php';
-require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-product-ticket-pool-max.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-instant-win-export-import.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-instant-winner-order-link.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/visibility.php';
