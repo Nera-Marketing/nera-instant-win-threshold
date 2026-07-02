@@ -9,7 +9,7 @@
 	"requires": "6.0",
 	"tested": "6.8",
 	"requires_php": "7.4",
-	"last_updated": "2026-06-13 14:48:59",
+	"last_updated": "2026-07-02 03:07:38",
 	"upgrade_notice": "Update to the latest release for bug fixes and compatibility with Lottery for WooCommerce.",
 	"sections": {
 		"description": "<p>Instant win rule types (instant, scheduled, ticket sold %), public prize visibility, and optional instant-win UI overrides for <strong>Lottery for WooCommerce</strong>.</p><p>Requires the Lottery for WooCommerce plugin to be installed and active.</p>",
