@@ -27,6 +27,11 @@ This plugin extends **Lottery for WooCommerce** (Giveaway for WooCommerce) with:
 
 == Changelog ==
 
+= 1.0.32 =
+* Fix - Orphaned pending-ticket cleanup fallback: on order cancelled/refunded/failed and on trash/delete (which LFW never handles), leftover `lty_ticket_pending` posts are removed by querying their `lty_order_id` meta directly, so cleanup works even when LFW's `lty_ticket_ids_in_order` order meta is missing. Also resets instant-win logs locked by the dead order, prunes both `_lty_hold_tickets`/`lty_hold_tickets` metas, and flushes LFW counter transients. Prevents orphaned pending tickets from counting as "placed" and driving stock negative on product save (WooCommerce "out of stock" while tickets remain).
+* CLI - New `scripts/fix-orphaned-lottery-tickets.php` repair for existing orphans: audits pending tickets on trashed/cancelled/refunded/failed/missing orders (dry-run by default; `apply`, optional `clear-holds`), then recalculates product stock via LFW's own math.
+* Docs - `docs/ORDER-TICKET-CLEANUP.md`: incident background and production runbook.
+
 = 1.0.31 =
 * Removed — per-product Ticket Number Max field. Shuffle/random ticket pool ceiling now always defaults to the product's Lottery Maximum Tickets (NERA_IWT_MAX_TICKET_NUMBER remains the fallback only when Maximum Tickets is unlimited).
 
