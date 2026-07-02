@@ -3,7 +3,7 @@
  * Plugin Name: Nera – Instant Win Rules
  * Plugin URI: https://github.com/Nera-Marketing/nera-instant-win-threshold
  * Description: Instant win rule types (instant, scheduled, ticket sold %), public prize visibility, and optional instant-win UI overrides for Lottery for WooCommerce.
- * Version: 1.0.31
+ * Version: 1.0.32
  * Author: Nera
  * Text Domain: nera-instant-win-threshold
  * Requires at least: 6.0
@@ -16,7 +16,7 @@ defined( 'ABSPATH' ) || exit;
 
 use YahnisElsts\PluginUpdateChecker\v5p5\Vcs\GitHubApi;
 
-define( 'NERA_IWT_VERSION', '1.0.31' );
+define( 'NERA_IWT_VERSION', '1.0.32' );
 define( 'NERA_IWT_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'NERA_IWT_PLUGIN_FILE', __FILE__ );
 
@@ -274,6 +274,7 @@ require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-instant-winner-order-link.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/visibility.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/rest-instant-wins.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/woocommerce-lottery-template-override.php';
+require_once NERA_IWT_PLUGIN_DIR . 'inc/order-ticket-cleanup-fallback.php';
 
 if ( defined( 'WP_CLI' ) && WP_CLI ) {
 	require_once NERA_IWT_PLUGIN_DIR . 'inc/cli-instant-win-diagnostics.php';
