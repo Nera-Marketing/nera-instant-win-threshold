@@ -30,6 +30,26 @@ instant-win logs the order locked, prunes both hold-ticket metas, and flushes LF
 counter transients. Deploy this version before running the repair so new orphans cannot
 form mid-repair.
 
+## Stock recalc on order death (v1.0.33+)
+
+Second incident, 2026-07-02, same product: LFW's save-time recalc counts **pending**
+tickets as placed. Order 154701 (1000 tickets, pending payment) sat in checkout when
+the product was saved at ~08:15 GMT → its reservation was baked into `_stock` (set to
+11,767). The order auto-cancelled at 09:18: LFW deleted the pending tickets but never
+recalculates stock on cancel, and WooCommerce's restock was a no-op (stock was never
+*reduced* for the unpaid order — only reserved via `wp_wc_reserved_stock`). Stock ran
+permanently 1000 low and drained to 0 at 28,999/30,000 sold — false "out of stock"
+with 1000 tickets left.
+
+`nera_iwt_recalc_lottery_stock_for_order()` (same file) closes this: priority 30 on
+the same six hooks, after LFW (10) and the orphan cleanup (20). For every lottery
+product in the dead order it flushes LFW's counter transients, then re-applies LFW's
+own formula `max_tickets − placed_ticket_count` via `wc_update_product_stock(...,
+'set', true)` + explicit `wc_update_product_stock_status()`. It runs unconditionally
+(not only when orphans were found) because LFW's own priority-10 removal is the common
+path and touches no stock; the formula is idempotent and self-heals prior drift.
+Closed lotteries and unlimited pools (`max_tickets` = 0) are skipped.
+
 ## Repair — `scripts/fix-orphaned-lottery-tickets.php`
 
 Finds pending tickets whose order is trashed / cancelled / refunded / failed / missing.

@@ -4,7 +4,7 @@ Tags: woocommerce, lottery, instant win, competition, giveaway
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.0.32
+Stable tag: 1.0.33
 License: GPLv2 or later
 
 Instant win rule types, public prize visibility, and optional instant-win UI overrides for Lottery for WooCommerce.
@@ -26,6 +26,10 @@ This plugin extends **Lottery for WooCommerce** (Giveaway for WooCommerce) with:
 3. Configure instant win rules and visibility on competition products as supported by your theme and Lottery for WooCommerce.
 
 == Changelog ==
+
+= 1.0.33 =
+* Fix - Stock recalc on order death: on order cancelled/refunded/failed/trash/delete (priority 30, after LFW's ticket removal and the v1.0.32 orphan cleanup), re-apply LFW's stock formula (`max_tickets − placed_ticket_count`) for every lottery product in the order. Closes the leak where a product save baked an unpaid order's pending-ticket reservation into `_stock` and the later cancel deleted the tickets without any recalc (WooCommerce restock is a no-op for never-reduced stock) — stock ran permanently low and produced a false "out of stock" while tickets remained (incident 2026-07-02 #2, order 154701, −1000 stock).
+* Docs - `docs/ORDER-TICKET-CLEANUP.md`: second incident write-up and the new recalc behaviour.
 
 = 1.0.32 =
 * Fix - Orphaned pending-ticket cleanup fallback: on order cancelled/refunded/failed and on trash/delete (which LFW never handles), leftover `lty_ticket_pending` posts are removed by querying their `lty_order_id` meta directly, so cleanup works even when LFW's `lty_ticket_ids_in_order` order meta is missing. Also resets instant-win logs locked by the dead order, prunes both `_lty_hold_tickets`/`lty_hold_tickets` metas, and flushes LFW counter transients. Prevents orphaned pending tickets from counting as "placed" and driving stock negative on product save (WooCommerce "out of stock" while tickets remain).
