@@ -30,6 +30,38 @@ instant-win logs the order locked, prunes both hold-ticket metas, and flushes LF
 counter transients. Deploy this version before running the repair so new orphans cannot
 form mid-repair.
 
+## Full LFW-parity cleanup (v1.0.34+)
+
+LFW's own removal path (`remove_lottery_ticket_for_order_cancel`) bails when either
+`lty_lottery_ticket_created_once` or `lty_ticket_ids_in_order` order meta is missing,
+and its create path bails when `created_once` is still present. The 1.0.32 fallback
+deleted pending tickets but never cleared those metas — so a revived order
+(failed → late payment → processing, or untrash → pay) hit the `created_once` guard:
+**the customer paid and received zero tickets**. Routine exposure: WooCommerce
+auto-cancels unpaid orders after 60 minutes and gateway webhooks can arrive late.
+
+`nera_iwt_cleanup_dead_order( $order_id, $mode )` replaces the pending-only cleanup:
+
+- **status mode** (cancelled/refunded/failed, priority 20): removes this order's
+  tickets of ANY status (LFW parity — full refund forfeits entries), resets
+  instant-win logs the way LFW's cancel path does (`remove_won_prize` on won logs,
+  then release + `lty_available`), decrements `_lty_ticket_count` by the number of
+  deleted *promoted* (buyer/winner) tickets only, prunes both hold metas, flushes
+  product **and per-user** LFW transients, and ALWAYS clears the three order metas +
+  order-item ticket metas — restoring LFW's revive contract.
+- **trash mode** (`woocommerce_trash_order` / `woocommerce_before_delete_order`):
+  pending tickets only (admins trash paid orders during manual cleanup); clears the
+  revive metas only when the order holds zero lottery tickets afterwards, so a paid
+  order untrashes untouched and a fully-unpaid order revives cleanly.
+
+Untrash needs no handler: WooCommerce restores the pre-trash status via
+`set_status()`, so the normal transition hooks fire and LFW recreates tickets where
+appropriate. The redundant `wp_trash_post`/`before_delete_post` registrations were
+dropped — WooCommerce fires the two `woocommerce_*` hooks in both HPOS and legacy
+storage. The same revive-meta clearing was added to the repair tool (1.0.1), which
+also flushes per-user transients and shows an informational "paid tickets on dead
+orders" count in the scan table.
+
 ## Stock recalc on order death (v1.0.33+)
 
 Second incident, 2026-07-02, same product: LFW's save-time recalc counts **pending**

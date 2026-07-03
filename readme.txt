@@ -4,7 +4,7 @@ Tags: woocommerce, lottery, instant win, competition, giveaway
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.0.33
+Stable tag: 1.0.34
 License: GPLv2 or later
 
 Instant win rule types, public prize visibility, and optional instant-win UI overrides for Lottery for WooCommerce.
@@ -26,6 +26,12 @@ This plugin extends **Lottery for WooCommerce** (Giveaway for WooCommerce) with:
 3. Configure instant win rules and visibility on competition products as supported by your theme and Lottery for WooCommerce.
 
 == Changelog ==
+
+= 1.0.34 =
+* Fix - Dead-order cleanup rewritten for full LFW parity (closes the "customer pays a revived order, gets zero tickets" gap): on cancelled/refunded/failed the fallback now removes tickets of ANY status (LFW parity — a full refund forfeits entries), resets instant-win logs per LFW's cancel path (`remove_won_prize` on won logs + release), decrements `_lty_ticket_count` for deleted promoted tickets only, flushes per-user LFW transients, and ALWAYS clears LFW's three order metas (`lty_ticket_ids_in_order`, `lty_lottery_ticket_created_once`, `lty_lottery_ticket_updated_once`) plus order-item ticket metas — restoring LFW's revive contract so failed→re-paid or untrash→paid orders get fresh tickets.
+* Fix - Trash/delete cleanup stays pending-only (admins trash paid orders during manual cleanup) but now clears the revive metas when the order holds zero lottery tickets afterwards, so a fully-unpaid order revives cleanly on untrash + pay.
+* Dev - Dropped redundant `wp_trash_post`/`before_delete_post` registrations — WooCommerce fires `woocommerce_trash_order`/`woocommerce_before_delete_order` in both HPOS and legacy storage.
+* Docs - `docs/ORDER-TICKET-CLEANUP.md`: v1.0.34 parity-cleanup section.
 
 = 1.0.33 =
 * Fix - Stock recalc on order death: on order cancelled/refunded/failed/trash/delete (priority 30, after LFW's ticket removal and the v1.0.32 orphan cleanup), re-apply LFW's stock formula (`max_tickets − placed_ticket_count`) for every lottery product in the order. Closes the leak where a product save baked an unpaid order's pending-ticket reservation into `_stock` and the later cancel deleted the tickets without any recalc (WooCommerce restock is a no-op for never-reduced stock) — stock ran permanently low and produced a false "out of stock" while tickets remained (incident 2026-07-02 #2, order 154701, −1000 stock).
