@@ -126,9 +126,21 @@ function nera_iwt_ajax_validate_add_rule_ticket_number_range() {
 		return;
 	}
 
+	// Held-back prizes get a system-managed number (not a user-entered ticket) — skip the range check.
+	if ( isset( $raw['nera_public_rule_type'] ) && NERA_IWT_RULE_TYPE_HELD === sanitize_key( (string) $raw['nera_public_rule_type'] ) ) {
+		return;
+	}
+
 	$result = nera_iwt_validate_instant_win_ticket_number_range( $product, $raw['ticket_number'] );
 	if ( is_wp_error( $result ) ) {
 		wp_send_json_error( array( 'error' => $result->get_error_message() ) );
+	}
+
+	if ( function_exists( 'nera_iwt_canonicalize_instant_win_ticket_number' ) ) {
+		$canonical = nera_iwt_canonicalize_instant_win_ticket_number( $product, $raw['ticket_number'] );
+		if ( is_wp_error( $canonical ) ) {
+			wp_send_json_error( array( 'error' => $canonical->get_error_message() ) );
+		}
 	}
 
 	if ( function_exists( 'nera_iwt_validate_rule_reserve_slots_feasibility' ) ) {
@@ -163,14 +175,32 @@ function nera_iwt_ajax_validate_bulk_save_ticket_number_range() {
 		return;
 	}
 
-	foreach ( $raw_rules as $row ) {
+	foreach ( $raw_rules as $rule_id => $row ) {
 		if ( ! is_array( $row ) || empty( $row['ticket_number'] ) ) {
+			continue;
+		}
+
+		// Held-back prizes carry a SYSTEM-MANAGED winning number (assigned from the unsold pool on
+		// activation and restored on save), not a user-entered ticket — so skip the range/format
+		// check for them. Otherwise a held prize's number (which can predate a later ticket-format
+		// change) blocks the entire bulk save.
+		$row_type = isset( $row['nera_public_rule_type'] )
+			? sanitize_key( (string) $row['nera_public_rule_type'] )
+			: (string) get_post_meta( absint( $rule_id ), 'nera_iwt_public_rule_type', true );
+		if ( NERA_IWT_RULE_TYPE_HELD === $row_type ) {
 			continue;
 		}
 
 		$result = nera_iwt_validate_instant_win_ticket_number_range( $product, $row['ticket_number'] );
 		if ( is_wp_error( $result ) ) {
 			wp_send_json_error( array( 'error' => $result->get_error_message() ) );
+		}
+
+		if ( function_exists( 'nera_iwt_canonicalize_instant_win_ticket_number' ) ) {
+			$canonical = nera_iwt_canonicalize_instant_win_ticket_number( $product, $row['ticket_number'] );
+			if ( is_wp_error( $canonical ) ) {
+				wp_send_json_error( array( 'error' => $canonical->get_error_message() ) );
+			}
 		}
 	}
 

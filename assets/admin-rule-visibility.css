@@ -121,6 +121,279 @@ body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibi
 	display: block !important;
 }
 
+/* Held action icons — relocated by JS into LFW's Action column (Dashicons + native title tooltip). */
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-held-actions {
+	display: none; /* shown only on Held-back rows, via the --held class */
+}
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-held-actions.nera-iwt-held-actions--held {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	vertical-align: middle;
+	margin-right: 8px; /* sit before LFW's Remove icon */
+}
+/* Each icon is a clickable Dashicon; all hidden by default, data-held-badge reveals the relevant ones. */
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-held-actions .nera-iwt-act--set,
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-held-actions .nera-iwt-act--edit,
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-held-actions .nera-iwt-act--deactivate,
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-held-actions .nera-iwt-act--draw {
+	display: none;
+	cursor: pointer;
+	color: #2271b1;
+}
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-held-actions .nera-iwt-act--set:hover,
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-held-actions .nera-iwt-act--edit:hover,
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-held-actions .nera-iwt-act--draw:hover {
+	color: #135e96;
+}
+/* Deactivate = "stop/undo" — muted grey, distinct from the blue actions. */
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-held-actions .nera-iwt-act--deactivate {
+	color: #50575e;
+}
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-held-actions .nera-iwt-act--deactivate:hover {
+	color: #1d2327;
+}
+/* Reveal only the icons relevant to the current state. */
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-held-actions[data-held-badge="pending"] .nera-iwt-act--set,
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-held-actions[data-held-badge="unplaceable"] .nera-iwt-act--set,
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-held-actions[data-held-badge="live"] .nera-iwt-act--edit,
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-held-actions[data-held-badge="live"] .nera-iwt-act--deactivate,
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-held-actions[data-held-badge="needs-draw"] .nera-iwt-act--draw {
+	display: inline-block;
+}
+
+/* ---- Rules table: horizontal scroll on small screens, with the Action column pinned ---- */
+/* JS (neraIwtWrapRulesTableForScroll) wraps the table in .nera-iwt-rules-scroll. */
+body.post-type-product .nera-iwt-rules-scroll {
+	position: relative;
+	overflow-x: auto;
+	/* Browsers force overflow-y to `auto` too whenever overflow-x isn't `visible`
+	   (the two axes are coupled per the CSS Overflow spec) — pin it to `hidden`
+	   explicitly so a 1-2px sub-pixel height mismatch doesn't add a vertical
+	   scrollbar that clips the table. Nothing here needs to scroll vertically. */
+	overflow-y: hidden;
+	/* Explicit width (not `auto`) — #wpbody is `display: inline-block`, and an
+	   auto-width overflow:auto box under a shrink-to-fit ancestor collapses to
+	   0px instead of filling the available space, hiding the whole table. */
+	width: 100%;
+	box-sizing: border-box;
+}
+body.post-type-product .nera-iwt-rules-scroll .lty-instant-winners-rules-contents {
+	min-width: 720px; /* keep columns usable; container scrolls below this width */
+}
+/* Keep the Action column visible while scrolling horizontally. */
+body.post-type-product .nera-iwt-rules-scroll .lty-instant-winner-action-column {
+	position: sticky;
+	right: 0;
+	z-index: 1;
+	background: #fff;
+	/* Held rows can stack several action icons (set/edit/deactivate/draw +
+	   LFW's own edit/pause/remove). Auto table layout only sizes this column
+	   from row content, so force one line — otherwise icons wrap to a 2nd row
+	   on the rows with the most icons, growing that row's height unevenly. */
+	white-space: nowrap;
+}
+body.post-type-product .nera-iwt-rules-scroll thead .lty-instant-winner-action-column {
+	z-index: 2;
+}
+/* Match the striped rows so the pinned cell blends in (WP .striped shades odd rows). */
+body.post-type-product .nera-iwt-rules-scroll tbody tr:nth-child(odd) .lty-instant-winner-action-column {
+	background: #f6f7f7;
+}
+body.post-type-product .nera-iwt-rules-scroll tbody tr:nth-child(even) .lty-instant-winner-action-column {
+	background: #fff;
+}
+/* Very small screens: drop the least-critical Image column to reduce sideways scrolling. */
+@media ( max-width: 782px ) {
+	body.post-type-product .nera-iwt-rules-scroll .lty-instant-winner-image-column {
+		display: none;
+	}
+}
+
+/* Ticket grid picker — modal (appended to <body>, so NOT scoped to the rules table). */
+.nera-iwt-grid-modal-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 100001;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: rgba(0, 0, 0, 0.5);
+}
+.nera-iwt-grid-modal-overlay[hidden] {
+	display: none;
+}
+.nera-iwt-grid-modal {
+	display: flex;
+	flex-direction: column;
+	width: min(92vw, 560px);
+	max-height: 82vh;
+	background: #fff;
+	border-radius: 6px;
+	box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+.nera-iwt-grid-modal-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 12px 16px;
+	border-bottom: 1px solid #dcdcde;
+	flex-shrink: 0;
+}
+.nera-iwt-grid-modal-title {
+	font-weight: 600;
+	font-size: 14px;
+}
+.nera-iwt-grid-modal-close {
+	padding: 0 4px;
+	border: 0;
+	background: none;
+	font-size: 22px;
+	line-height: 1;
+	color: #50575e;
+	cursor: pointer;
+}
+.nera-iwt-grid-modal-body {
+	padding: 14px 16px;
+	overflow-y: auto;
+	min-height: 0; /* let this flex child shrink so it (and the grid) can scroll */
+}
+.nera-iwt-grid-modal .nera-iwt-grid-tabs {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	margin-bottom: 10px;
+}
+.nera-iwt-grid-modal .nera-iwt-grid-tab.is-active {
+	background: #2271b1;
+	border-color: #2271b1;
+	color: #fff;
+}
+.nera-iwt-grid-modal .nera-iwt-grid-cells {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+	gap: 6px;
+	max-height: 46vh;
+	overflow-y: auto;
+	align-content: start; /* rows stay top-aligned instead of stretching */
+	padding: 2px; /* room for the scrollbar / focus ring */
+}
+.nera-iwt-grid-modal .nera-iwt-grid-cell {
+	text-align: center;
+}
+.nera-iwt-grid-modal .nera-iwt-grid-cell.is-sold {
+	background: #f0f0f0;
+	color: #b7b7b7;
+	text-decoration: line-through;
+	cursor: not-allowed;
+}
+.nera-iwt-grid-modal .nera-iwt-grid-cell.is-picked {
+	background: #2271b1;
+	border-color: #2271b1;
+	color: #fff;
+}
+.nera-iwt-grid-modal-foot {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	padding: 12px 16px;
+	border-top: 1px solid #dcdcde;
+	flex-shrink: 0;
+}
+.nera-iwt-grid-modal .nera-iwt-modal-field {
+	margin: 0 0 12px;
+}
+.nera-iwt-grid-modal .nera-iwt-modal-label {
+	display: block;
+	font-weight: 600;
+	margin-bottom: 4px;
+}
+.nera-iwt-grid-modal .nera-iwt-modal-ticket {
+	width: 100%;
+	max-width: 220px;
+}
+.nera-iwt-grid-modal .nera-iwt-modal-field .description {
+	display: block;
+	margin-top: 3px;
+}
+.nera-iwt-grid-modal .nera-iwt-modal-grid-label {
+	margin: 4px 0 8px;
+	font-weight: 600;
+}
+
+/* LFW ticket-number input locked on held rows (number is managed by Activate/Deactivate). */
+body.post-type-product .lty-instant-winners-rules-contents .lty-ticket-number.nera-iwt-lfw-ticket-locked {
+	background: #f0f0f0;
+	color: #888;
+	cursor: not-allowed;
+}
+
+/* "Hold all in group" toolbar (in the rules bulk-actions bar). */
+body.post-type-product .nera-iwt-hold-group-wrap {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	margin-left: 8px;
+	vertical-align: middle;
+}
+/* When placed on its own line below the "Held-back prize status" legend. */
+body.post-type-product .nera-iwt-hold-group-wrap--block {
+	display: flex;
+	margin-left: 0;
+	margin-top: 14px;
+}
+body.post-type-product .nera-iwt-hold-group-select {
+	max-width: 170px;
+}
+body.post-type-product .nera-iwt-hold-group-msg {
+	color: #137333;
+	font-size: 12px;
+}
+
+/* "Held-back settings" block (auto% + warn%) at top of the Instant Win Prizes tab.
+   Uses block + inline-block (not flex) and neutralises WooCommerce's aggressive
+   `label { float:left; width:… }` product-data styling that otherwise overlaps. */
+body.post-type-product .lty-instant-winners-rules-wrapper .nera-iwt-held-settings {
+	display: block;
+	clear: both;
+	overflow: hidden;
+	margin: 12px 0;
+	padding: 10px 12px;
+	background: #f6f7f7;
+	border: 1px solid #dcdcde;
+	border-radius: 4px;
+}
+body.post-type-product .lty-instant-winners-rules-wrapper .nera-iwt-held-settings > strong {
+	display: block;
+	float: none;
+	margin: 0 0 8px;
+}
+body.post-type-product .lty-instant-winners-rules-wrapper .nera-iwt-held-settings label {
+	display: flex !important;
+	align-items: center;
+	float: none !important;
+	clear: both !important;
+	width: auto !important;
+	max-width: 340px;
+	margin: 0 0 8px 0 !important;
+	padding: 0 !important;
+	position: static !important;
+	line-height: 30px;
+}
+body.post-type-product .lty-instant-winners-rules-wrapper .nera-iwt-held-settings input[type="number"] {
+	display: inline-block !important;
+	float: none !important;
+	width: 5em !important;
+	min-height: 30px;
+	margin: 0 0 0 auto !important;
+	vertical-align: middle;
+}
+body.post-type-product .lty-instant-winners-rules-wrapper .nera-iwt-held-settings .description {
+	display: block;
+	clear: both;
+	margin: 8px 0 0;
+}
+
 body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-rule-visibility-table-fields .nera-iwt-schedule-end:disabled,
 #lty_lottery_instant_winners_rule_modal .nera-iwt-rule-visibility-fields .nera-iwt-schedule-end:disabled,
 #lty_lottery_instant_winners_rule_modal.modal .nera-iwt-rule-visibility-fields .nera-iwt-schedule-end:disabled {
@@ -260,6 +533,31 @@ body.post-type-product .nera-iwt-prize-search-count {
 	white-space: nowrap;
 }
 
+body.post-type-product .nera-iwt-prize-status-wrap {
+	display: inline-flex;
+	align-items: center;
+	margin-left: 12px;
+	vertical-align: middle;
+}
+
+body.post-type-product .nera-iwt-prize-status-filter {
+	height: 30px;
+	line-height: 28px;
+	box-sizing: border-box;
+	padding: 0 24px 0 8px;
+	border: 1px solid #8c8f94;
+	border-radius: 3px;
+	font-size: 13px;
+	background-color: #fff;
+	max-width: 160px;
+}
+
+body.post-type-product .nera-iwt-prize-status-filter:focus {
+	border-color: #2271b1;
+	box-shadow: 0 0 0 1px #2271b1;
+	outline: none;
+}
+
 /* ------------------------------------------------------------------------- */
 /* Prizes table — status dot beside "ID: xxxx" (data-nera-status via JS).     */
 /*   locked    => not yet available (e.g. ticket-% threshold not reached) red */
@@ -305,6 +603,10 @@ body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-status-dot.
 	background: #f59e0b; /* orange */
 }
 
+body.post-type-product .lty-instant-winners-rules-contents .nera-iwt-status-dot.nera-iwt-dot-unplaceable {
+	background: #6c2eb9; /* purple — needs attention */
+}
+
 /* Status legend in the rules note area (mirrors the dot colours above). */
 body.post-type-product .nera-iwt-status-legend {
 	margin: 6px 0 0;
@@ -347,4 +649,20 @@ body.post-type-product .nera-iwt-status-legend .nera-iwt-status-dot.nera-iwt-dot
 
 body.post-type-product .nera-iwt-status-legend .nera-iwt-status-dot.nera-iwt-dot-won {
 	background: #f59e0b;
+}
+
+body.post-type-product .nera-iwt-status-legend .nera-iwt-status-dot.nera-iwt-dot-unplaceable {
+	background: #6c2eb9;
+}
+
+/* Inline Add-rule error banner (duplicate / out-of-range / invalid ticket number). */
+#lty_lottery_instant_winners_rule_modal .nera-iwt-add-error {
+	margin: 0 0 14px;
+	padding: 10px 14px;
+	border-left: 4px solid #d63638;
+	background: #fcf0f1;
+	color: #8a1f24;
+	font-size: 13px;
+	line-height: 1.5;
+	border-radius: 3px;
 }
