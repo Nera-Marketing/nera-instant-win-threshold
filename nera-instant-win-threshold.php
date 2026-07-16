@@ -3,7 +3,7 @@
  * Plugin Name: Nera – Instant Win Rules
  * Plugin URI: https://github.com/Nera-Marketing/nera-instant-win-threshold
  * Description: Instant win rule types (instant, scheduled, ticket sold %), public prize visibility, and optional instant-win UI overrides for Lottery for WooCommerce.
- * Version: 1.0.34
+ * Version: 1.0.35
  * Author: Nera
  * Text Domain: nera-instant-win-threshold
  * Requires at least: 6.0
@@ -16,7 +16,7 @@ defined( 'ABSPATH' ) || exit;
 
 use YahnisElsts\PluginUpdateChecker\v5p5\Vcs\GitHubApi;
 
-define( 'NERA_IWT_VERSION', '1.0.34' );
+define( 'NERA_IWT_VERSION', '1.0.35' );
 define( 'NERA_IWT_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'NERA_IWT_PLUGIN_FILE', __FILE__ );
 
@@ -39,6 +39,27 @@ if ( ! defined( 'NERA_IWT_MAX_TICKET_NUMBER' ) ) {
  */
 if ( ! defined( 'NERA_IWT_ENABLE_SCHEDULE_PRIZE_TYPE' ) ) {
 	define( 'NERA_IWT_ENABLE_SCHEDULE_PRIZE_TYPE', 0 );
+}
+
+/**
+ * When 1 (or true): “Held-back Prize” appears in the Rule type dropdown on instant-win rules.
+ * When 0 (default): that option is hidden. Existing rules already set to Held-back remain
+ * editable until switched away; new rules cannot use the type while disabled.
+ * Held-back prizes show publicly as available with no ticket number until activated (Option B);
+ * activation assigns an unsold number so the next buyer of it wins.
+ * Override: define( 'NERA_IWT_ENABLE_HELD_PRIZE_TYPE', 1 ); in wp-config.php.
+ */
+if ( ! defined( 'NERA_IWT_ENABLE_HELD_PRIZE_TYPE' ) ) {
+	define( 'NERA_IWT_ENABLE_HELD_PRIZE_TYPE', 0 );
+}
+
+/**
+ * Master switch for held-back notification emails (auto-activation summary, end-of-competition
+ * draw). OFF by default — email is deferred; the WP Dashboard warnings are the current channel.
+ * Turn on later: define( 'NERA_IWT_HELD_EMAILS_ENABLED', true ); in wp-config.php.
+ */
+if ( ! defined( 'NERA_IWT_HELD_EMAILS_ENABLED' ) ) {
+	define( 'NERA_IWT_HELD_EMAILS_ENABLED', false );
 }
 
 require_once NERA_IWT_PLUGIN_DIR . 'inc/upgrade-temp-backup-helper.php';
@@ -268,6 +289,10 @@ require_once NERA_IWT_PLUGIN_DIR . 'inc/rule-public-display.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-ticket-generation-rule-guard.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-sequential-ticket-guard.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-instant-win-ticket-range.php';
+require_once NERA_IWT_PLUGIN_DIR . 'inc/instant-win-ticket-canonical.php';
+require_once NERA_IWT_PLUGIN_DIR . 'inc/held-prizes.php';
+require_once NERA_IWT_PLUGIN_DIR . 'inc/held-prizes-safety.php';
+require_once NERA_IWT_PLUGIN_DIR . 'inc/held-prizes-remedy.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/ticket-pool-feasibility.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-instant-win-export-import.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-instant-winner-order-link.php';
