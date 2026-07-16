@@ -297,3 +297,52 @@ if ( ! function_exists( 'lty_get_remaining_shuffle_ticket_numbers' ) ) {
 		return $ticket_numbers;
 	}
 }
+
+// ---------------------------------------------------------------------------
+// RULE MATCH BY TICKET NUMBER — an empty / unassigned number is never a match.
+//
+// Held-back prizes carry an EMPTY lty_ticket_number until activation. LFW's own
+// lty_get_rule_id_by_ticket_number() matches by exact meta value, so an empty
+// number would (a) collide with every other empty held prize on save — LFW's add
+// throws "Ticket Number Already exists" and its bulk-save skips the row — and
+// (b) never usefully match a sold ticket anyway (sold tickets always carry a real
+// number). Returning false for an empty number lets any number of held prizes
+// coexist and save, without changing behaviour for real numbers.
+//
+// Pluggable in LFW (if !function_exists); this file loads via the mu-plugin shim
+// BEFORE lottery-for-woocommerce, so this definition wins. Bodies run at call time
+// (LFW fully loaded), so referencing LFW symbols here is safe.
+// ---------------------------------------------------------------------------
+
+if ( ! function_exists( 'lty_get_rule_id_by_ticket_number' ) ) {
+
+	/**
+	 * Instant-winner rule ID whose stored ticket number equals $ticket_number, or false.
+	 * An empty $ticket_number returns false (unassigned held prizes never collide/match).
+	 *
+	 * @param int    $lottery_id    Lottery ID.
+	 * @param string $ticket_number Ticket number to match.
+	 * @return int|false
+	 */
+	function lty_get_rule_id_by_ticket_number( $lottery_id, $ticket_number ) {
+		if ( '' === (string) $ticket_number ) {
+			return false;
+		}
+
+		$rule_ids = get_posts(
+			array(
+				'post_type'      => LTY_Register_Post_Types::LOTTERY_INSTANT_WINNER_RULE_POSTTYPE,
+				'post_status'    => lty_get_instant_winner_rule_statuses(),
+				'posts_per_page' => -1,
+				'fields'         => 'ids',
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+				'meta_key'       => 'lty_ticket_number',
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
+				'meta_value'     => $ticket_number,
+				'post_parent'    => $lottery_id,
+			)
+		);
+
+		return ( is_array( $rule_ids ) && ! empty( $rule_ids ) ) ? reset( $rule_ids ) : false;
+	}
+}
