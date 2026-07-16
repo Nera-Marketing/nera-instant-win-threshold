@@ -323,3 +323,75 @@ function nera_iwt_cli_simulate_sellout( array $args, array $assoc_args ) {
 }
 
 WP_CLI::add_command( 'nera-iwt simulate-sellout', 'nera_iwt_cli_simulate_sellout' );
+
+/**
+ * Report held-back prize status for a lottery product.
+ *
+ * ## OPTIONS
+ *
+ * [--product-id=<id>]
+ * : Lottery product ID.
+ *
+ * ## EXAMPLES
+ *
+ *     wp nera-iwt held-status --product-id=112077
+ *
+ * @param array<int, string>   $args       Positional (unused).
+ * @param array<string, mixed> $assoc_args Flags.
+ * @return void
+ */
+function nera_iwt_cli_held_status( array $args, array $assoc_args ) {
+	unset( $args );
+	$product_id = isset( $assoc_args['product-id'] ) ? absint( $assoc_args['product-id'] ) : 0;
+	if ( $product_id <= 0 ) {
+		WP_CLI::error( 'Usage: wp nera-iwt held-status --product-id=<lottery_product_id>' );
+	}
+
+	$product = wc_get_product( $product_id );
+	if ( ! $product || ! function_exists( 'lty_is_lottery_product' ) || ! lty_is_lottery_product( $product ) ) {
+		WP_CLI::error( sprintf( 'Product %d is not a lottery product.', $product_id ) );
+	}
+
+	if ( ! function_exists( 'lty_get_instant_winner_rule_ids' ) ) {
+		WP_CLI::error( 'Lottery for WooCommerce is not active.' );
+	}
+
+	$threshold = function_exists( 'nera_iwt_get_held_autotrigger_pct' ) ? nera_iwt_get_held_autotrigger_pct( $product ) : 0;
+	$sold      = function_exists( 'nera_iwt_get_lottery_ticket_sold_percent' ) ? nera_iwt_get_lottery_ticket_sold_percent( $product ) : null;
+	$unsold    = function_exists( 'nera_iwt_held_unsold_count' ) ? nera_iwt_held_unsold_count( $product ) : 0;
+
+	WP_CLI::log( sprintf( 'Auto-activation threshold: %d%%', (int) $threshold ) );
+	WP_CLI::log( sprintf( 'Tickets sold: %s%%', null === $sold ? 'unknown' : (string) $sold ) );
+	WP_CLI::log( sprintf( 'Unsold assignable numbers: %d', (int) $unsold ) );
+
+	$rows = array();
+	foreach ( (array) lty_get_instant_winner_rule_ids( $product_id ) as $rid ) {
+		$rid = absint( $rid );
+		if ( $rid <= 0 || 'held' !== (string) get_post_meta( $rid, 'nera_iwt_public_rule_type', true ) ) {
+			continue;
+		}
+		$won = function_exists( 'nera_iwt_rule_has_assigned_winner' ) && nera_iwt_rule_has_assigned_winner( $rid );
+		$rows[] = array(
+			'rule_id'    => $rid,
+			'state'      => (string) get_post_meta( $rid, 'nera_iwt_held_state', true ),
+			'number'     => (string) get_post_meta( $rid, 'lty_ticket_number', true ),
+			'value'      => (string) get_post_meta( $rid, 'lty_prize_amount', true ),
+			'needs_draw' => get_post_meta( $rid, 'nera_iwt_held_needs_draw', true ) ? 'yes' : 'no',
+			'won'        => $won ? 'yes' : 'no',
+		);
+	}
+
+	if ( empty( $rows ) ) {
+		WP_CLI::log( 'No held-back prizes on this product.' );
+	} elseif ( class_exists( 'WP_CLI\\Utils\\format_items' ) || function_exists( 'WP_CLI\\Utils\\format_items' ) ) {
+		WP_CLI\Utils\format_items( 'table', $rows, array( 'rule_id', 'state', 'number', 'value', 'needs_draw', 'won' ) );
+	} else {
+		foreach ( $rows as $r ) {
+			WP_CLI::log( sprintf( '#%d state=%s number=%s value=%s needs_draw=%s won=%s', $r['rule_id'], $r['state'], $r['number'], $r['value'], $r['needs_draw'], $r['won'] ) );
+		}
+	}
+
+	WP_CLI::success( 'Held-prize status complete.' );
+}
+
+WP_CLI::add_command( 'nera-iwt held-status', 'nera_iwt_cli_held_status' );
