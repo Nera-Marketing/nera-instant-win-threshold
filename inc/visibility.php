@@ -224,6 +224,20 @@ function nera_iwt_available_log_visible_on_storefront( $log_id, $product, array 
 		return true;
 	}
 
+	// Held-back (Option B): shown on the storefront as an available prize — with no ticket
+	// number until the prize is activated. EXCEPTION: a prize the safety net could not place
+	// on any unsold number ('unplaceable') is removed from the public page immediately so it
+	// never advertises a prize that can no longer be won.
+	if ( NERA_IWT_RULE_TYPE_HELD === $vis['type'] ) {
+		$held_state = (string) get_post_meta( $vis['rule_id'], 'nera_iwt_held_state', true );
+		if ( 'unplaceable' === $held_state ) {
+			nera_iwt_debug_log_visibility( $log_id, 'held_unplaceable_hidden', false, $vis );
+			return false;
+		}
+		nera_iwt_debug_log_visibility( $log_id, 'held_shown_as_available', true, $vis );
+		return true;
+	}
+
 	if ( NERA_IWT_RULE_TYPE_SCHEDULE === $vis['type'] ) {
 		if ( ! empty( $args['skip_schedule'] ) ) {
 			// Schedule comparison delegated to client-side JavaScript (browser local time).

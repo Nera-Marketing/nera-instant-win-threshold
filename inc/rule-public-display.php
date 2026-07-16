@@ -20,6 +20,9 @@ const NERA_IWT_RULE_TYPE_SCHEDULE = 'schedule';
 /** @var string */
 const NERA_IWT_RULE_TYPE_TICKET_PCT = 'ticket_pct';
 
+/** @var string Held-back prize (Option B): shows as available with no number until activated. */
+const NERA_IWT_RULE_TYPE_HELD = 'held';
+
 /**
  * Allowed rule_type values stored in post meta.
  *
@@ -30,6 +33,7 @@ function nera_iwt_public_rule_type_slugs() {
 		NERA_IWT_RULE_TYPE_INSTANT,
 		NERA_IWT_RULE_TYPE_SCHEDULE,
 		NERA_IWT_RULE_TYPE_TICKET_PCT,
+		NERA_IWT_RULE_TYPE_HELD,
 	);
 }
 
@@ -43,6 +47,7 @@ function nera_iwt_public_rule_type_labels() {
 		NERA_IWT_RULE_TYPE_INSTANT    => __( 'Instant Prize', 'nera-instant-win-threshold' ),
 		NERA_IWT_RULE_TYPE_SCHEDULE   => __( 'Schedule Prize', 'nera-instant-win-threshold' ),
 		NERA_IWT_RULE_TYPE_TICKET_PCT => __( 'Ticket Sold Percentage Prize', 'nera-instant-win-threshold' ),
+		NERA_IWT_RULE_TYPE_HELD       => __( 'Held-back Prize', 'nera-instant-win-threshold' ),
 	);
 }
 
@@ -57,6 +62,28 @@ function nera_iwt_is_schedule_prize_type_enabled() {
 	}
 
 	$v = NERA_IWT_ENABLE_SCHEDULE_PRIZE_TYPE;
+
+	if ( true === $v ) {
+		return true;
+	}
+
+	return 1 === (int) $v;
+}
+
+/**
+ * Whether “Held-back Prize” is selectable in the admin Rule type UI.
+ *
+ * Gated by NERA_IWT_ENABLE_HELD_PRIZE_TYPE (default off). Existing rules already set to
+ * Held-back remain editable until switched away, even while the type is disabled.
+ *
+ * @return bool
+ */
+function nera_iwt_is_held_prize_type_enabled() {
+	if ( ! defined( 'NERA_IWT_ENABLE_HELD_PRIZE_TYPE' ) ) {
+		return false;
+	}
+
+	$v = NERA_IWT_ENABLE_HELD_PRIZE_TYPE;
 
 	if ( true === $v ) {
 		return true;
@@ -136,6 +163,9 @@ function nera_iwt_public_rule_type_labels_for_admin_select( $current_type = '', 
 	$show_advanced   = $assume_auto;
 	$show_ticket_pct = $show_advanced || NERA_IWT_RULE_TYPE_TICKET_PCT === $current_type;
 	$show_schedule   = ( $show_advanced && nera_iwt_is_schedule_prize_type_enabled() ) || NERA_IWT_RULE_TYPE_SCHEDULE === $current_type;
+	// Held-back works on both automatic and user-chooses products (the number is assigned at
+	// activation), so it is not gated by ticket generation mode — only by its enable flag.
+	$show_held       = nera_iwt_is_held_prize_type_enabled() || NERA_IWT_RULE_TYPE_HELD === $current_type;
 
 	$out = array();
 	foreach ( $all as $slug => $label ) {
@@ -143,6 +173,9 @@ function nera_iwt_public_rule_type_labels_for_admin_select( $current_type = '', 
 			continue;
 		}
 		if ( NERA_IWT_RULE_TYPE_TICKET_PCT === $slug && ! $show_ticket_pct ) {
+			continue;
+		}
+		if ( NERA_IWT_RULE_TYPE_HELD === $slug && ! $show_held ) {
 			continue;
 		}
 		$out[ $slug ] = $label;
@@ -214,6 +247,13 @@ function nera_iwt_persist_rule_visibility_meta( $rule_id, array $row ) {
 		}
 	}
 
+	if ( NERA_IWT_RULE_TYPE_HELD === $type && ! nera_iwt_is_held_prize_type_enabled() ) {
+		$prev = (string) get_post_meta( $rule_id, 'nera_iwt_public_rule_type', true );
+		if ( NERA_IWT_RULE_TYPE_HELD !== $prev ) {
+			$type = NERA_IWT_RULE_TYPE_INSTANT;
+		}
+	}
+
 	$lottery_id = absint( get_post_meta( $rule_id, 'lty_lottery_id', true ) );
 	$product    = $lottery_id > 0 ? wc_get_product( $lottery_id ) : null;
 
@@ -260,6 +300,36 @@ function nera_iwt_persist_rule_visibility_meta( $rule_id, array $row ) {
 
 	$pct = max( 0, min( 100, intval( $row['nera_ticket_pct'] ?? 0 ) ) );
 	update_post_meta( $rule_id, 'nera_iwt_ticket_pct', $pct );
+
+	// Held-back state: a new/held rule starts 'held'; an already-activated rule keeps its number.
+	if ( NERA_IWT_RULE_TYPE_HELD === $type ) {
+		$state = (string) get_post_meta( $rule_id, 'nera_iwt_held_state', true );
+		if ( 'active' !== $state && 'drawn' !== $state ) {
+			update_post_meta( $rule_id, 'nera_iwt_held_state', 'held' );
+			// Option B: a held (not-yet-activated) prize must carry NO ticket number, so any
+			// number left over from a previous type cannot be won before activation.
+			update_post_meta( $rule_id, 'lty_ticket_number', '' );
+			if ( function_exists( 'nera_iwt_held_sync_ticket_number_to_logs' ) ) {
+				nera_iwt_held_sync_ticket_number_to_logs( $rule_id, '' );
+			}
+		} else {
+			// active / drawn: the number is system-managed via Activate / Run draw. Restore the
+			// authoritative assigned number so a stale/edited LFW ticket-number input on this
+			// save cannot silently change the winning number.
+			$managed = (string) get_post_meta( $rule_id, 'nera_iwt_held_number', true );
+			if ( '' !== $managed ) {
+				update_post_meta( $rule_id, 'lty_ticket_number', $managed );
+				if ( function_exists( 'nera_iwt_held_sync_ticket_number_to_logs' ) ) {
+					nera_iwt_held_sync_ticket_number_to_logs( $rule_id, $managed );
+				}
+			}
+		}
+	} else {
+		// Switched away from held → drop the held markers (activation no longer applies).
+		delete_post_meta( $rule_id, 'nera_iwt_held_state' );
+		delete_post_meta( $rule_id, 'nera_iwt_held_needs_draw' );
+		delete_post_meta( $rule_id, 'nera_iwt_held_number' );
+	}
 
 	nera_iwt_push_rule_visibility_to_child_logs( $rule_id );
 	nera_iwt_maybe_clear_theme_instant_wins_cache_for_rule( $rule_id );
@@ -918,11 +988,137 @@ function nera_iwt_admin_rule_status( $rule_id, $type, $pct, $sched_gmt, $sched_e
 		return 'won';
 	}
 
+	// Held-back: 'available' (green) once activated (a number is assigned), otherwise
+	// 'locked' (red) — it is held and not yet winnable, even though the public page shows
+	// it as available.
+	if ( NERA_IWT_RULE_TYPE_HELD === $type ) {
+		$state = (string) get_post_meta( $rule_id, 'nera_iwt_held_state', true );
+		if ( 'unplaceable' === $state ) {
+			return 'unplaceable'; // merged status: its own (purple) dot — a problem needing attention.
+		}
+		return 'active' === $state ? 'available' : 'locked';
+	}
+
 	if ( ! nera_iwt_admin_rule_is_available( $type, $pct, $sched_gmt, $sched_end_gmt, $product ) ) {
 		return 'locked';
 	}
 
 	return 'available';
+}
+
+/**
+ * Human tooltip for the merged status dot: the unified state plus the specific reason.
+ * Shown on hover/focus of the coloured dot beside each prize ID.
+ *
+ * @param int             $rule_id Rule post ID.
+ * @param string          $type    Rule type slug.
+ * @param string          $status  One of locked|available|won|unplaceable.
+ * @param int             $pct     Ticket-% threshold.
+ * @param WC_Product|null $product Lottery product.
+ * @return string
+ */
+function nera_iwt_admin_rule_status_tip( $rule_id, $type, $status, $pct, $product ) {
+	if ( 'won' === $status ) {
+		return __( 'Won — a winner has been assigned.', 'nera-instant-win-threshold' );
+	}
+	if ( 'unplaceable' === $status ) {
+		return __( 'Needs attention — no unsold number left to hold this prize.', 'nera-instant-win-threshold' );
+	}
+	if ( NERA_IWT_RULE_TYPE_HELD === $type ) {
+		return 'available' === $status
+			? __( 'Available — held prize is live; waiting for a buyer.', 'nera-instant-win-threshold' )
+			: __( 'Not available yet — held back, not activated.', 'nera-instant-win-threshold' );
+	}
+	if ( NERA_IWT_RULE_TYPE_TICKET_PCT === $type ) {
+		if ( 'available' === $status ) {
+			return __( 'Available — ticket-sold % reached.', 'nera-instant-win-threshold' );
+		}
+		$sold = ( $product instanceof WC_Product && function_exists( 'nera_iwt_get_lottery_ticket_sold_percent' ) )
+			? nera_iwt_get_lottery_ticket_sold_percent( $product )
+			: null;
+		if ( null !== $sold ) {
+			return sprintf(
+				/* translators: 1: current sold %, 2: threshold % */
+				__( 'Not available yet — %1$s%% sold, unlocks at %2$d%%.', 'nera-instant-win-threshold' ),
+				(string) $sold,
+				(int) $pct
+			);
+		}
+		return sprintf(
+			/* translators: %d: threshold % */
+			__( 'Not available yet — unlocks at %d%% sold.', 'nera-instant-win-threshold' ),
+			(int) $pct
+		);
+	}
+	if ( NERA_IWT_RULE_TYPE_SCHEDULE === $type ) {
+		return 'available' === $status
+			? __( 'Available — within the schedule window.', 'nera-instant-win-threshold' )
+			: __( 'Not available yet — outside the schedule window.', 'nera-instant-win-threshold' );
+	}
+	return 'available' === $status
+		? __( 'Available — instant prize.', 'nera-instant-win-threshold' )
+		: __( 'Not available yet.', 'nera-instant-win-threshold' );
+}
+
+/**
+ * Human-facing status badge for a held-back prize, driving the admin row + legend.
+ *
+ * Precedence: drawn → won → needs-draw → unplaceable → live → pending.
+ *
+ * @param int $rule_id Rule post ID.
+ * @return array{slug:string,label:string,tone:string} tone ∈ crit|ok|warn.
+ */
+function nera_iwt_held_status_badge( $rule_id ) {
+	$rule_id = (int) $rule_id;
+	$state   = (string) get_post_meta( $rule_id, 'nera_iwt_held_state', true );
+	$won     = function_exists( 'nera_iwt_rule_has_assigned_winner' ) && nera_iwt_rule_has_assigned_winner( $rule_id );
+	$needs   = (int) get_post_meta( $rule_id, 'nera_iwt_held_needs_draw', true );
+	$draw_on = ! function_exists( 'nera_iwt_held_draw_enabled' ) || nera_iwt_held_draw_enabled();
+
+	if ( 'drawn' === $state ) {
+		// Draw remedy off → a (legacy) drawn prize is simply a Won prize.
+		return $draw_on
+			? array( 'slug' => 'drawn', 'label' => __( 'Drawn', 'nera-instant-win-threshold' ), 'tone' => 'warn' )
+			: array( 'slug' => 'won', 'label' => __( 'Won', 'nera-instant-win-threshold' ), 'tone' => 'warn' );
+	}
+	if ( $won ) {
+		return array( 'slug' => 'won', 'label' => __( 'Won', 'nera-instant-win-threshold' ), 'tone' => 'warn' );
+	}
+	if ( $needs && $draw_on ) {
+		return array( 'slug' => 'needs-draw', 'label' => __( 'Needs draw', 'nera-instant-win-threshold' ), 'tone' => 'warn' );
+	}
+	if ( 'unplaceable' === $state ) {
+		return array( 'slug' => 'unplaceable', 'label' => __( 'Unplaceable', 'nera-instant-win-threshold' ), 'tone' => 'crit' );
+	}
+	if ( 'active' === $state ) {
+		return array( 'slug' => 'live', 'label' => __( 'Live', 'nera-instant-win-threshold' ), 'tone' => 'ok' );
+	}
+	return array( 'slug' => 'pending', 'label' => __( 'Pending', 'nera-instant-win-threshold' ), 'tone' => 'crit' );
+}
+
+/**
+ * Winner identity recorded on a held prize's log (for the Won / Drawn rows).
+ *
+ * @param int $rule_id Rule post ID.
+ * @return array{name:string,ticket:string,order:int}
+ */
+function nera_iwt_held_winner_info( $rule_id ) {
+	$out = array( 'name' => '', 'ticket' => '', 'order' => 0 );
+	if ( ! function_exists( 'lty_get_instant_winner_log_id_by_rule_id' ) ) {
+		return $out;
+	}
+	$log_id = lty_get_instant_winner_log_id_by_rule_id( (int) $rule_id, 0 );
+	if ( ! $log_id ) {
+		return $out;
+	}
+	$name = trim( (string) get_post_meta( $log_id, 'lty_user_name', true ) );
+	if ( '' === $name ) {
+		$name = (string) get_post_meta( $log_id, 'lty_user_email', true );
+	}
+	$out['name']   = $name;
+	$out['ticket'] = (string) get_post_meta( $log_id, 'lty_ticket_number', true );
+	$out['order']  = (int) get_post_meta( $log_id, 'lty_order_id', true );
+	return $out;
 }
 
 /**
@@ -957,9 +1153,10 @@ function nera_iwt_admin_rule_column_cell( $instant_winner ) {
 	$labels = nera_iwt_public_rule_type_labels_for_admin_select( $type, $product );
 
 	// Live status for row colour-coding (see admin-rule-visibility.js / .css).
-	$status = nera_iwt_admin_rule_status( $rule_id, $type, $pct, $sched_gmt, $sched_end_gmt, $product );
+	$status     = nera_iwt_admin_rule_status( $rule_id, $type, $pct, $sched_gmt, $sched_end_gmt, $product );
+	$status_tip = nera_iwt_admin_rule_status_tip( $rule_id, $type, $status, $pct, $product );
 	?>
-	<td class="nera-iwt-public-rule-type-column" data-nera-status="<?php echo esc_attr( $status ); ?>">
+	<td class="nera-iwt-public-rule-type-column" data-nera-status="<?php echo esc_attr( $status ); ?>" data-nera-tip="<?php echo esc_attr( $status_tip ); ?>">
 		<div class="nera-iwt-rule-visibility-fields nera-iwt-rule-visibility-table-fields">
 			<p class="nera-iwt-table-field-row">
 				<label class="screen-reader-text" for="nera-iwt-public-rule-type-<?php echo esc_attr( (string) $rule_id ); ?>">
@@ -1020,6 +1217,24 @@ function nera_iwt_admin_rule_column_cell( $instant_winner ) {
 					value="<?php echo esc_attr( (string) $pct ); ?>"
 				/>
 			</p>
+			<?php
+			$held_state_raw = (string) get_post_meta( $rule_id, 'nera_iwt_held_state', true );
+			$held_state     = 'active' === $held_state_raw ? 'active' : 'held';
+			$held_badge     = nera_iwt_held_status_badge( $rule_id );
+			?>
+			<div class="nera-iwt-held-controls" data-rule-id="<?php echo esc_attr( (string) $rule_id ); ?>" data-held-state="<?php echo esc_attr( $held_state ); ?>" data-held-badge="<?php echo esc_attr( $held_badge['slug'] ); ?>" hidden>
+				<?php
+				// Hidden data-carrier (rule id + held state). The visible status now lives entirely in the
+				// merged colour dot on the ID (data-nera-status) — no badge/stripe here anymore. The action
+				// icons render inside, then JS (neraIwtRelocateHeldActions) moves them into the Action column.
+				?>
+				<span class="nera-iwt-held-actions" data-rule-id="<?php echo esc_attr( (string) $rule_id ); ?>" data-held-badge="<?php echo esc_attr( $held_badge['slug'] ); ?>">
+					<span class="dashicons dashicons-awards nera-iwt-open-activate nera-iwt-act--set" role="button" title="<?php echo esc_attr__( 'Set winning ticket…', 'nera-instant-win-threshold' ); ?>" aria-label="<?php echo esc_attr__( 'Set winning ticket…', 'nera-instant-win-threshold' ); ?>"></span>
+					<span class="dashicons dashicons-edit nera-iwt-held-edit nera-iwt-act--edit" role="button" title="<?php echo esc_attr__( 'Edit number', 'nera-instant-win-threshold' ); ?>" aria-label="<?php echo esc_attr__( 'Edit number', 'nera-instant-win-threshold' ); ?>"></span>
+					<span class="dashicons dashicons-controls-pause nera-iwt-deactivate-held nera-iwt-act--deactivate" role="button" title="<?php echo esc_attr__( 'Deactivate', 'nera-instant-win-threshold' ); ?>" aria-label="<?php echo esc_attr__( 'Deactivate', 'nera-instant-win-threshold' ); ?>"></span>
+					<span class="dashicons dashicons-randomize nera-iwt-run-held-draw nera-iwt-act--draw" role="button" title="<?php echo esc_attr__( 'Run draw', 'nera-instant-win-threshold' ); ?>" aria-label="<?php echo esc_attr__( 'Run draw', 'nera-instant-win-threshold' ); ?>"></span>
+				</span>
+			</div>
 		</div>
 	</td>
 	<?php
@@ -1134,6 +1349,40 @@ function nera_iwt_admin_enqueue_rule_visibility( $hook_suffix ) {
 		'productTicketGenerationIsAutomatic' => 0,
 		'ticketGenConflictMsg'        => '',
 		'instantWinTicketRangeNote'   => '',
+		'ajaxUrl'                     => admin_url( 'admin-ajax.php' ),
+		'activateHeldNonce'           => wp_create_nonce( 'nera_iwt_activate_held' ),
+		'activateHeldConfirmAuto'     => __( 'Activate this held-back prize on a system-picked unsold ticket number? The winning number stays hidden until a customer buys it.', 'nera-instant-win-threshold' ),
+		'activateHeldConfirmTyped'    => __( 'Activate this held-back prize on the ticket number you entered? It must be an unsold ticket, and the number stays hidden from the public page.', 'nera-instant-win-threshold' ),
+		'deactivateHeldConfirm'       => __( 'Deactivate this held-back prize and clear its ticket number? It will no longer be winnable until re-activated.', 'nera-instant-win-threshold' ),
+		'runHeldDrawConfirm'          => __( 'Draw a random winner from the sold tickets for this held-back prize and award it now? This awards a real prize and cannot be undone.', 'nera-instant-win-threshold' ),
+		'runHeldDrawDone'             => __( 'Winner drawn:', 'nera-instant-win-threshold' ),
+		'gridLoading'                 => __( 'Loading tickets…', 'nera-instant-win-threshold' ),
+		'gridTitle'                   => __( 'Set the winning ticket', 'nera-instant-win-threshold' ),
+		'modalTicketLabel'            => __( 'Winning ticket number', 'nera-instant-win-threshold' ),
+		'modalTicketPlaceholder'      => __( 'leave blank = system picks', 'nera-instant-win-threshold' ),
+		'modalHint'                   => __( 'Leave blank to let the system pick a definitely-unsold number.', 'nera-instant-win-threshold' ),
+		'modalGridLabel'              => __( 'Or pick from the grid:', 'nera-instant-win-threshold' ),
+		'modalCancel'                 => __( 'Cancel', 'nera-instant-win-threshold' ),
+		'modalActivate'               => __( 'Activate', 'nera-instant-win-threshold' ),
+		'holdGroupButton'             => __( 'Hold all in group', 'nera-instant-win-threshold' ),
+		'holdGroupConfirm'            => __( 'Set every prize in group “%s” to Held-back? You can still change individual prizes afterwards, then Save.', 'nera-instant-win-threshold' ),
+		'holdGroupResult'             => __( '%d prize(s) set to Held-back — remember to Save.', 'nera-instant-win-threshold' ),
+		'heldEnabled'                 => function_exists( 'nera_iwt_is_held_prize_type_enabled' ) && nera_iwt_is_held_prize_type_enabled() ? 1 : 0,
+		'heldDrawEnabled'             => function_exists( 'nera_iwt_held_draw_enabled' ) && nera_iwt_held_draw_enabled() ? 'yes' : 'no',
+		'heldSettings'                => array(
+			'autoStored'  => $is_lottery ? (string) get_post_meta( $product_id, 'nera_iwt_held_autotrigger_pct', true ) : '',
+			'warnStored'  => $is_lottery ? (string) get_post_meta( $product_id, 'nera_iwt_held_warn_pct', true ) : '',
+			'autoDefault' => (int) ( defined( 'NERA_IWT_HELD_AUTOTRIGGER_PCT' ) ? NERA_IWT_HELD_AUTOTRIGGER_PCT : 90 ),
+			'title'       => __( 'Held-back settings', 'nera-instant-win-threshold' ),
+			'autoLabel'   => __( 'Auto-activate at % sold', 'nera-instant-win-threshold' ),
+			'warnLabel'   => __( 'Warn at % sold', 'nera-instant-win-threshold' ),
+			'note'        => sprintf(
+				/* translators: %d: default auto-activation percent */
+				__( 'Leave blank for the defaults — auto-activate at %1$d%% sold, warn 10%% below that. Saved when you click “Update”; warn %% must be below auto %%.', 'nera-instant-win-threshold' ),
+				(int) ( defined( 'NERA_IWT_HELD_AUTOTRIGGER_PCT' ) ? NERA_IWT_HELD_AUTOTRIGGER_PCT : 90 )
+			),
+		),
+		'heldGenericError'            => __( 'Sorry, that action could not be completed. Please try again.', 'nera-instant-win-threshold' ),
 	);
 
 	if ( $is_lottery && function_exists( 'nera_iwt_get_effective_ticket_start_for_validation' ) && function_exists( 'nera_iwt_get_instant_win_ticket_upper_bound' ) ) {
