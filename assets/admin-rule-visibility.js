@@ -1410,6 +1410,35 @@
 		});
 	}
 
+	/**
+	 * Non-blocking success toast (bottom-right, auto-dismiss). Reassures the admin that held-prize
+	 * actions are saved immediately — no manual "Save" needed.
+	 *
+	 * @param {string} message
+	 */
+	function neraIwtToast(message) {
+		var $t = $('<div class="nera-iwt-toast" role="status" aria-live="polite"></div>').text(String(message || ''));
+		$('body').append($t);
+		window.setTimeout(function () { $t.addClass('is-visible'); }, 10);
+
+		var hideTimer = null;
+		function neraToastRemove() {
+			window.clearTimeout(hideTimer);
+			$t.removeClass('is-visible');
+			window.setTimeout(function () { $t.remove(); }, 300);
+		}
+		function neraToastScheduleHide(delay) {
+			window.clearTimeout(hideTimer);
+			hideTimer = window.setTimeout(neraToastRemove, delay);
+		}
+		neraToastScheduleHide(4000);
+		// Hovering (or focusing) pauses the auto-dismiss so the admin can read it; it dismisses
+		// shortly after the pointer leaves. A click dismisses it right away.
+		$t.on('mouseenter focusin', function () { window.clearTimeout(hideTimer); });
+		$t.on('mouseleave focusout', function () { neraToastScheduleHide(1500); });
+		$t.on('click', neraToastRemove);
+	}
+
 	function neraIwtHeldSetStatus($controls, status) {
 		var $cell = $controls.closest('.nera-iwt-public-rule-type-column');
 		if ($cell.length) {
@@ -1573,6 +1602,10 @@
 				// Keep LFW's own ticket-number input in sync so a later Save cannot clobber it.
 				$target.closest('tr').find('.lty-ticket-number').first().val(data.number || '');
 				neraIwtHeldSetStatus($target, 'available');
+				var neraNum = String(data.number || '');
+				neraIwtToast(neraIwtGridEditMode
+					? ('Winning ticket updated to ' + neraNum + '. Saved automatically.')
+					: ('Held prize activated — winning ticket ' + neraNum + '. Saved automatically — no need to click Save.'));
 				neraIwtCloseGridModal();
 			}, { edit: neraIwtGridEditMode ? 1 : 0 });
 		});
@@ -1599,6 +1632,7 @@
 			$controls.closest('tr').find('.nera-iwt-held-actions').attr('data-held-badge', 'pending');
 			$controls.closest('tr').find('.lty-ticket-number').first().val('');
 			neraIwtHeldSetStatus($controls, 'locked');
+			neraIwtToast('Held prize deactivated. Saved automatically.');
 		});
 	});
 

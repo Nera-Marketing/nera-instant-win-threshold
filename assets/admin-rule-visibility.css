@@ -210,6 +210,46 @@ body.post-type-product .nera-iwt-rules-scroll tbody tr:nth-child(even) .lty-inst
 	}
 }
 
+/* Success toast for held-prize actions (auto-save reassurance) — fixed, bottom-right, auto-dismiss. */
+body.post-type-product .nera-iwt-toast {
+	position: fixed;
+	right: 20px;
+	bottom: 20px;
+	z-index: 100002;
+	max-width: 360px;
+	display: flex;
+	align-items: flex-start;
+	gap: 9px;
+	background: #1e2327;
+	color: #f2f4f6;
+	padding: 12px 15px;
+	border-radius: 8px;
+	border-left: 4px solid #46b450;
+	box-shadow: 0 10px 34px rgba(0, 0, 0, 0.32);
+	font-size: 13.5px;
+	line-height: 1.45;
+	opacity: 0;
+	transform: translateY(10px);
+	transition: opacity 0.25s ease, transform 0.25s ease;
+	cursor: pointer; /* hoverable (pauses auto-dismiss) + click to dismiss */
+}
+body.post-type-product .nera-iwt-toast::before {
+	content: "\2713"; /* ✓ */
+	color: #46b450;
+	font-weight: 700;
+	flex: none;
+}
+body.post-type-product .nera-iwt-toast.is-visible {
+	opacity: 1;
+	transform: none;
+}
+@media ( prefers-reduced-motion: reduce ) {
+	body.post-type-product .nera-iwt-toast {
+		transform: none;
+		transition: opacity 0.25s ease;
+	}
+}
+
 /* Ticket grid picker — modal (appended to <body>, so NOT scoped to the rules table). */
 .nera-iwt-grid-modal-overlay {
 	position: fixed;

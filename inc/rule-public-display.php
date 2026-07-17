@@ -144,8 +144,9 @@ function nera_iwt_product_has_ticket_pct_public_rules( $product_id ) {
 
 /**
  * Labels for the Rule type dropdown: Schedule / Ticket % only when Ticket Generation Type is Automatic;
- * still gated by {@see nera_iwt_is_schedule_prize_type_enabled()} for Schedule. Grandfathers the current
- * row type when switching generation mode would otherwise hide the stored slug.
+ * Held-back only when NOT Automatic (User Chooses the Ticket). Schedule also gated by
+ * {@see nera_iwt_is_schedule_prize_type_enabled()}. Grandfathers the current row type so switching
+ * generation mode never hides (and silently converts) the stored slug.
  *
  * @param string           $current_type Stored slug for this rule row (empty in Add Rule modal).
  * @param WC_Product|null $product       Lottery product on the edit screen; null assumes Automatic-friendly options.
@@ -163,9 +164,11 @@ function nera_iwt_public_rule_type_labels_for_admin_select( $current_type = '', 
 	$show_advanced   = $assume_auto;
 	$show_ticket_pct = $show_advanced || NERA_IWT_RULE_TYPE_TICKET_PCT === $current_type;
 	$show_schedule   = ( $show_advanced && nera_iwt_is_schedule_prize_type_enabled() ) || NERA_IWT_RULE_TYPE_SCHEDULE === $current_type;
-	// Held-back works on both automatic and user-chooses products (the number is assigned at
-	// activation), so it is not gated by ticket generation mode — only by its enable flag.
-	$show_held       = nera_iwt_is_held_prize_type_enabled() || NERA_IWT_RULE_TYPE_HELD === $current_type;
+	// Held-back is the User-Chooses counterpart to Ticket %/Schedule (which are Automatic-only):
+	// its secret winning number is a ticket the buyer PICKS, so it only applies when the customer
+	// chooses their ticket. Hidden on Automatic products; the current row's stored type is
+	// grandfathered so an existing held row never silently converts.
+	$show_held       = ( nera_iwt_is_held_prize_type_enabled() && ! $assume_auto ) || NERA_IWT_RULE_TYPE_HELD === $current_type;
 
 	$out = array();
 	foreach ( $all as $slug => $label ) {
@@ -844,8 +847,23 @@ function nera_iwt_sync_visibility_meta_to_log( $post_id, $post ) {
 		update_post_meta( $post_id, $meta_key, $v );
 	}
 
-	$lottery_id = get_post_meta( $post_id, 'lty_lottery_id', true );
-	nera_iwt_maybe_clear_theme_instant_wins_cache( absint( $lottery_id ) );
+	// Stamp lty_lottery_id on the log when it's missing. LFW only writes it on a product Save — NOT
+	// when a win log is created at purchase — yet every storefront lookup (the public winner list and
+	// the order-received result popup via lty_get_instant_winner_log_ids_by_order_id) filters logs by
+	// lty_lottery_id = product_id. Without it, a genuine win shows "not won". Derive from the rule's
+	// lty_lottery_id, falling back to the rule's parent product.
+	$lottery_id = absint( get_post_meta( $post_id, 'lty_lottery_id', true ) );
+	if ( $lottery_id <= 0 ) {
+		$lottery_id = absint( get_post_meta( $rule_id, 'lty_lottery_id', true ) );
+		if ( $lottery_id <= 0 ) {
+			$lottery_id = absint( wp_get_post_parent_id( $rule_id ) );
+		}
+		if ( $lottery_id > 0 ) {
+			update_post_meta( $post_id, 'lty_lottery_id', $lottery_id );
+		}
+	}
+
+	nera_iwt_maybe_clear_theme_instant_wins_cache( $lottery_id );
 }
 
 add_action( 'save_post_lty_ins_winner_log', 'nera_iwt_sync_visibility_meta_to_log', 15, 2 );

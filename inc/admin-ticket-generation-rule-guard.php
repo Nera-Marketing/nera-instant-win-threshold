@@ -1,6 +1,8 @@
 <?php
 /**
- * Rule Type vs Ticket Generation Type (Automatic only for Schedule / Ticket %).
+ * Rule Type vs Ticket Generation Type: Schedule / Ticket % are Automatic-only; Held-back is
+ * User-Chooses-only (the mirror). Enforced in the Rule-type dropdown, on Add/Save rule, and when
+ * switching the product's Ticket Generation Type.
  *
  * @package Nera_Instant_Win_Threshold
  */
@@ -224,3 +226,168 @@ function nera_iwt_ajax_validate_bulk_save_ticket_generation_rule_types() {
 
 add_action( 'wp_ajax_lty_add_instant_winner_rule', 'nera_iwt_ajax_validate_add_rule_ticket_generation_rule_types', 2 );
 add_action( 'wp_ajax_lty_save_instant_winners_rules', 'nera_iwt_ajax_validate_bulk_save_ticket_generation_rule_types', 2 );
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Mirror: Held-back Prize requires Ticket Generation Type “User Chooses the Ticket”.
+ * (Automatic products use Ticket % / Schedule instead — its secret number is a ticket
+ * the buyer picks, which only exists in User-Chooses mode.)
+ * ───────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * AJAX error when an Automatic product tries to use Held-back.
+ *
+ * @return string
+ */
+function nera_iwt_message_held_requires_user_chooses() {
+	return __( 'Held-back Prize is only available when Ticket Generation Type is “User Chooses the Ticket”.', 'nera-instant-win-threshold' );
+}
+
+/**
+ * Admin notice when blocking a switch TO Automatic while Held-back rules exist.
+ *
+ * @return string
+ */
+function nera_iwt_message_held_rules_block_automatic() {
+	return __( 'This product has Held-back Prize rules, which need Ticket Generation Type “User Chooses the Ticket”. Change those rules to Instant Prize or remove them before switching to Automatic.', 'nera-instant-win-threshold' );
+}
+
+/**
+ * Block saving Ticket Generation Type = Automatic while Held-back rules exist.
+ *
+ * @param int $post_id Product ID.
+ * @return void
+ */
+function nera_iwt_validate_product_switch_to_automatic_with_held( $post_id ) {
+	if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
+		return;
+	}
+
+	if ( ! isset( $_REQUEST['_lty_ticket_generation_type'] ) ) {
+		return;
+	}
+
+	$post_id = absint( $post_id );
+	$product = wc_get_product( $post_id );
+
+	if ( ! $product || ! function_exists( 'lty_is_lottery_product' ) || ! lty_is_lottery_product( $product ) ) {
+		return;
+	}
+
+	// Only when the product is currently NOT Automatic (a real switch INTO Automatic).
+	if ( nera_iwt_product_has_automatic_ticket_generation( $product ) ) {
+		return;
+	}
+
+	$posted = wc_clean( wp_unslash( $_REQUEST['_lty_ticket_generation_type'] ) );
+
+	if ( '1' !== $posted ) {
+		return;
+	}
+
+	if ( ! nera_iwt_product_has_instant_win_rule_of_public_type( $post_id, NERA_IWT_RULE_TYPE_HELD ) ) {
+		return;
+	}
+
+	if ( class_exists( 'WC_Admin_Meta_Boxes', false ) ) {
+		WC_Admin_Meta_Boxes::add_error( nera_iwt_message_held_rules_block_automatic() );
+	}
+
+	// Revert to the product's current (non-automatic) generation type; fall back to User Chooses.
+	$current = (string) $product->get_meta( '_lty_ticket_generation_type', true );
+	if ( '' === $current || '1' === $current ) {
+		$current = '2';
+	}
+	$_POST['_lty_ticket_generation_type']    = $current;
+	$_REQUEST['_lty_ticket_generation_type'] = $current;
+}
+
+add_action( 'woocommerce_process_product_meta_lottery', 'nera_iwt_validate_product_switch_to_automatic_with_held', 5 );
+
+/**
+ * AJAX: Add Rule — disallow Held-back when the product is Automatic.
+ *
+ * @return void
+ */
+function nera_iwt_ajax_validate_add_rule_held_user_chooses() {
+	check_ajax_referer( 'lty-instant-winner', 'lty_security' );
+
+	if ( ! isset( $_POST['product_id'], $_POST['instant_winner_rule'] ) ) {
+		return;
+	}
+
+	$product = wc_get_product( absint( wp_unslash( $_POST['product_id'] ) ) );
+
+	if ( ! $product || ! nera_iwt_product_has_automatic_ticket_generation( $product ) ) {
+		return;
+	}
+
+	$raw = wp_unslash( $_POST['instant_winner_rule'] );
+	if ( ! is_array( $raw ) ) {
+		return;
+	}
+
+	$type = isset( $raw['nera_public_rule_type'] ) ? sanitize_key( (string) $raw['nera_public_rule_type'] ) : NERA_IWT_RULE_TYPE_INSTANT;
+
+	if ( NERA_IWT_RULE_TYPE_HELD !== $type ) {
+		return;
+	}
+
+	wp_send_json_error( array( 'error' => nera_iwt_message_held_requires_user_chooses() ) );
+}
+
+/**
+ * AJAX: Save Rules — disallow Held-back when Automatic (grandfather existing held rows).
+ *
+ * @return void
+ */
+function nera_iwt_ajax_validate_bulk_save_held_user_chooses() {
+	check_ajax_referer( 'lty-instant-winner', 'lty_security' );
+
+	if ( ! isset( $_POST['product_id'], $_POST['instant_winners_rules'] ) ) {
+		return;
+	}
+
+	$product = wc_get_product( absint( wp_unslash( $_POST['product_id'] ) ) );
+
+	if ( ! $product || ! nera_iwt_product_has_automatic_ticket_generation( $product ) ) {
+		return;
+	}
+
+	$raw_rules = wp_unslash( $_POST['instant_winners_rules'] );
+	if ( ! is_array( $raw_rules ) ) {
+		return;
+	}
+
+	foreach ( $raw_rules as $rule_id => $row ) {
+		if ( ! is_array( $row ) ) {
+			continue;
+		}
+
+		$rid = absint( $rule_id );
+		if ( $rid <= 0 ) {
+			continue;
+		}
+
+		$type = isset( $row['nera_public_rule_type'] ) ? sanitize_key( (string) $row['nera_public_rule_type'] ) : '';
+		if ( '' === $type || ! in_array( $type, nera_iwt_public_rule_type_slugs(), true ) ) {
+			$type = (string) get_post_meta( $rid, 'nera_iwt_public_rule_type', true );
+			if ( '' === $type || ! in_array( $type, nera_iwt_public_rule_type_slugs(), true ) ) {
+				$type = NERA_IWT_RULE_TYPE_INSTANT;
+			}
+		}
+
+		if ( NERA_IWT_RULE_TYPE_HELD !== $type ) {
+			continue;
+		}
+
+		// Grandfather a row that is already Held-back (don't block editing existing data).
+		if ( NERA_IWT_RULE_TYPE_HELD === (string) get_post_meta( $rid, 'nera_iwt_public_rule_type', true ) ) {
+			continue;
+		}
+
+		wp_send_json_error( array( 'error' => nera_iwt_message_held_requires_user_chooses() ) );
+	}
+}
+
+add_action( 'wp_ajax_lty_add_instant_winner_rule', 'nera_iwt_ajax_validate_add_rule_held_user_chooses', 2 );
+add_action( 'wp_ajax_lty_save_instant_winners_rules', 'nera_iwt_ajax_validate_bulk_save_held_user_chooses', 2 );
