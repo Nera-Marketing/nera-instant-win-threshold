@@ -42,15 +42,15 @@ if ( ! defined( 'NERA_IWT_ENABLE_SCHEDULE_PRIZE_TYPE' ) ) {
 }
 
 /**
- * When 1 (or true): “Held-back Prize” appears in the Rule type dropdown on instant-win rules.
- * When 0 (default): that option is hidden. Existing rules already set to Held-back remain
- * editable until switched away; new rules cannot use the type while disabled.
+ * When 1 (default): “Held-back Prize” appears in the Rule type dropdown on instant-win rules.
+ * When 0: that option is hidden — existing rules already set to Held-back remain editable until
+ * switched away; new rules cannot use the type while disabled.
  * Held-back prizes show publicly as available with no ticket number until activated (Option B);
  * activation assigns an unsold number so the next buyer of it wins.
- * Override: define( 'NERA_IWT_ENABLE_HELD_PRIZE_TYPE', 1 ); in wp-config.php.
+ * Override to disable: define( 'NERA_IWT_ENABLE_HELD_PRIZE_TYPE', 0 ); in wp-config.php.
  */
 if ( ! defined( 'NERA_IWT_ENABLE_HELD_PRIZE_TYPE' ) ) {
-	define( 'NERA_IWT_ENABLE_HELD_PRIZE_TYPE', 0 );
+	define( 'NERA_IWT_ENABLE_HELD_PRIZE_TYPE', 1 );
 }
 
 /**
