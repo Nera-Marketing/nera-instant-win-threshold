@@ -1267,6 +1267,27 @@ function nera_iwt_admin_popup_fields() {
 	global $post;
 
 	$product = ( $post instanceof WP_Post && 'product' === $post->post_type ) ? wc_get_product( $post->ID ) : null;
+
+	// The Add-rule modal is re-rendered inside LFW's Add-rule / pagination AJAX (after creating a
+	// rule), where `global $post` is NOT the product. Without a product the Rule-type dropdown
+	// defaults to Automatic-style options (Ticket % instead of Held-back). Fall back to the request's
+	// product id (LFW already verified the AJAX nonce before this render runs).
+	if ( ! $product instanceof WC_Product ) {
+		// phpcs:disable WordPress.Security.NonceVerification.Missing
+		$req_pid = 0;
+		if ( isset( $_POST['product_id'] ) ) {
+			$req_pid = absint( wp_unslash( $_POST['product_id'] ) );
+		} elseif ( isset( $_POST['post_ID'] ) ) {
+			$req_pid = absint( wp_unslash( $_POST['post_ID'] ) );
+		} elseif ( isset( $_REQUEST['post'] ) ) {
+			$req_pid = absint( wp_unslash( $_REQUEST['post'] ) );
+		}
+		// phpcs:enable WordPress.Security.NonceVerification.Missing
+		if ( $req_pid > 0 ) {
+			$product = wc_get_product( $req_pid );
+		}
+	}
+
 	if ( ! $product instanceof WC_Product || ! function_exists( 'lty_is_lottery_product' ) || ! lty_is_lottery_product( $product ) ) {
 		$product = null;
 	}
