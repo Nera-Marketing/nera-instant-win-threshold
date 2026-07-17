@@ -1377,6 +1377,26 @@
 		}
 	});
 
+	// After a successful bulk Save, LFW leaves the typed ticket numbers in the inputs — but the
+	// server normalises them (e.g. alphabet "12" → "B2") and only a page refresh showed the
+	// canonical form. Re-render the current page (via LFW's own pagination) so the canonical values
+	// appear immediately. (Add New Rule already re-renders; only bulk Save didn't.)
+	$(document).ajaxComplete(function (_event, xhr, settings) {
+		if (!settings || !settings.data || typeof settings.data !== 'string') {
+			return;
+		}
+		if (!neraIwtIsLtySaveInstantWinnersRulesAjaxData(settings.data)) {
+			return;
+		}
+		if (!xhr || !xhr.responseJSON || !xhr.responseJSON.success) {
+			return; // save failed — leave the rows so the admin can fix them
+		}
+		var $page = $('.lty-lottery-instant-winners-rules-pagination-wrapper .lty-current-page').first();
+		if ($page.length) {
+			$page.trigger('change'); // LFW re-renders the current page from the DB (canonical numbers)
+		}
+	});
+
 	// ---------------------------------------------------------------------
 	// Held-back prize activation / deactivation (admin table controls).
 	// ---------------------------------------------------------------------
