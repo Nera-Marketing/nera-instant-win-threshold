@@ -4,7 +4,7 @@ Tags: woocommerce, lottery, instant win, competition, giveaway
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.0.35
+Stable tag: 1.0.36
 License: GPLv2 or later
 
 Instant win rule types, public prize visibility, and optional instant-win UI overrides for Lottery for WooCommerce.
@@ -26,6 +26,13 @@ This plugin extends **Lottery for WooCommerce** (Giveaway for WooCommerce) with:
 3. Configure instant win rules and visibility on competition products as supported by your theme and Lottery for WooCommerce.
 
 == Changelog ==
+
+= 1.0.36 =
+* Feature - Held-back Prize is enabled by default (opt out with `NERA_IWT_ENABLE_HELD_PRIZE_TYPE` = 0 in wp-config).
+* Feature - Held-back Prize is limited to Ticket Generation Type “User Chooses the Ticket”; Automatic products keep Ticket % / Schedule instead.
+* Fix - Server-side guards block Held-back on Automatic products and prevent switching a product to Automatic while Held-back rules exist.
+* Fix - Stamp missing `lty_lottery_id` on instant-win logs so storefront / order-received winner lookups match.
+* UI - Success toast after held-prize activate/deactivate/edit so admins know the change auto-saved.
 
 = 1.0.34 =
 * Fix - Dead-order cleanup rewritten for full LFW parity (closes the "customer pays a revived order, gets zero tickets" gap): on cancelled/refunded/failed the fallback now removes tickets of ANY status (LFW parity — a full refund forfeits entries), resets instant-win logs per LFW's cancel path (`remove_won_prize` on won logs + release), decrements `_lty_ticket_count` for deleted promoted tickets only, flushes per-user LFW transients, and ALWAYS clears LFW's three order metas (`lty_ticket_ids_in_order`, `lty_lottery_ticket_created_once`, `lty_lottery_ticket_updated_once`) plus order-item ticket metas — restoring LFW's revive contract so failed→re-paid or untrash→paid orders get fresh tickets.
