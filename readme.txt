@@ -4,7 +4,7 @@ Tags: woocommerce, lottery, instant win, competition, giveaway
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.0.36
+Stable tag: 1.0.37
 License: GPLv2 or later
 
 Instant win rule types, public prize visibility, and optional instant-win UI overrides for Lottery for WooCommerce.
@@ -26,6 +26,10 @@ This plugin extends **Lottery for WooCommerce** (Giveaway for WooCommerce) with:
 3. Configure instant win rules and visibility on competition products as supported by your theme and Lottery for WooCommerce.
 
 == Changelog ==
+
+= 1.0.37 =
+* Fix - Resolve product id in the Add Rule modal after LFW AJAX so Held-back Rule type options stay correct on User Chooses products.
+* Fix - Re-render the rules table after a successful bulk Save so canonical ticket numbers appear immediately.
 
 = 1.0.36 =
 * Feature - Held-back Prize is enabled by default (opt out with `NERA_IWT_ENABLE_HELD_PRIZE_TYPE` = 0 in wp-config).
