@@ -929,7 +929,8 @@
 
 	function neraIwtInjectHoldGroupUI() {
 		var admin = window.neraIwtAdmin || {};
-		if (!admin.heldEnabled) {
+		// wp_localize_script stringifies scalars ("0" is truthy) — parse like productHasPctOrScheduleRules.
+		if (parseInt(String(admin.heldEnabled || '0'), 10) !== 1) {
 			return; // Held-back type disabled → no group-hold control.
 		}
 		if ($('.nera-iwt-hold-group-wrap').length) {
@@ -961,8 +962,11 @@
 	// ----- "Held-back settings" block (auto% + warn%) ----------------------
 	function neraIwtInjectHeldSettings() {
 		var admin = window.neraIwtAdmin || {};
-		if (!admin.heldEnabled) {
-			return;
+		if (
+			parseInt(String(admin.heldEnabled || '0'), 10) !== 1 &&
+			parseInt(String(admin.productHasHeldRules || '0'), 10) !== 1
+		) {
+			return; // Type disabled and no grandfathered held rules → nothing to configure.
 		}
 		var $wrap = $('.lty-instant-winners-rules-wrapper').first();
 		if (!$wrap.length || $wrap.find('.nera-iwt-held-settings').length) {
