@@ -23,6 +23,9 @@ const NERA_IWT_RULE_TYPE_TICKET_PCT = 'ticket_pct';
 /** @var string Held-back prize (Option B): shows as available with no number until activated. */
 const NERA_IWT_RULE_TYPE_HELD = 'held';
 
+/** @var string WooCommerce setting ('yes'|'no') — site-wide Held-back Prize switch; see inc/admin-settings.php. */
+const NERA_IWT_HELD_PRIZE_TYPE_OPTION = 'nera_iwt_enable_held_prize_type';
+
 /**
  * Allowed rule_type values stored in post meta.
  *
@@ -71,25 +74,36 @@ function nera_iwt_is_schedule_prize_type_enabled() {
 }
 
 /**
+ * Whether the Held-back Prize switch is pinned by NERA_IWT_ENABLE_HELD_PRIZE_TYPE in wp-config.php
+ * (the WooCommerce setting is then shown read-only and never saved).
+ *
+ * @return bool
+ */
+function nera_iwt_is_held_prize_type_locked() {
+	return defined( 'NERA_IWT_ENABLE_HELD_PRIZE_TYPE' );
+}
+
+/**
  * Whether “Held-back Prize” is selectable in the admin Rule type UI.
  *
- * Gated by NERA_IWT_ENABLE_HELD_PRIZE_TYPE (default off). Existing rules already set to
- * Held-back remain editable until switched away, even while the type is disabled.
+ * Precedence: NERA_IWT_ENABLE_HELD_PRIZE_TYPE in wp-config.php → WooCommerce setting
+ * {@see NERA_IWT_HELD_PRIZE_TYPE_OPTION} (default on). Existing rules already set to Held-back
+ * remain editable and keep their full lifecycle until switched away, even while disabled.
  *
  * @return bool
  */
 function nera_iwt_is_held_prize_type_enabled() {
-	if ( ! defined( 'NERA_IWT_ENABLE_HELD_PRIZE_TYPE' ) ) {
-		return false;
+	if ( nera_iwt_is_held_prize_type_locked() ) {
+		$v = NERA_IWT_ENABLE_HELD_PRIZE_TYPE;
+
+		if ( true === $v ) {
+			return true;
+		}
+
+		return 1 === (int) $v;
 	}
 
-	$v = NERA_IWT_ENABLE_HELD_PRIZE_TYPE;
-
-	if ( true === $v ) {
-		return true;
-	}
-
-	return 1 === (int) $v;
+	return 'no' !== get_option( NERA_IWT_HELD_PRIZE_TYPE_OPTION, 'yes' );
 }
 
 /**
@@ -1407,6 +1421,8 @@ function nera_iwt_admin_enqueue_rule_visibility( $hook_suffix ) {
 		'holdGroupConfirm'            => __( 'Set every prize in group “%s” to Held-back? You can still change individual prizes afterwards, then Save.', 'nera-instant-win-threshold' ),
 		'holdGroupResult'             => __( '%d prize(s) set to Held-back — remember to Save.', 'nera-instant-win-threshold' ),
 		'heldEnabled'                 => function_exists( 'nera_iwt_is_held_prize_type_enabled' ) && nera_iwt_is_held_prize_type_enabled() ? 1 : 0,
+		// Type switched off but this product still runs held prizes → keep their threshold inputs.
+		'productHasHeldRules'         => $is_lottery && nera_iwt_product_has_instant_win_rule_of_public_type( $product_id, NERA_IWT_RULE_TYPE_HELD ) ? 1 : 0,
 		'heldDrawEnabled'             => function_exists( 'nera_iwt_held_draw_enabled' ) && nera_iwt_held_draw_enabled() ? 'yes' : 'no',
 		'heldSettings'                => array(
 			'autoStored'  => $is_lottery ? (string) get_post_meta( $product_id, 'nera_iwt_held_autotrigger_pct', true ) : '',

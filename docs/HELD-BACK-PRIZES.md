@@ -7,15 +7,31 @@ storefront never reveals an unwon prize's number.
 
 Built entirely in this plugin's layer on top of Lottery for WooCommerce (LFW); no LFW core changes.
 
-## Enabling
+## Enabling / disabling
+
+Site-wide switch: **WooCommerce → Settings → Products → Nera Instant Wins → Held-back Prize**
+(option `nera_iwt_enable_held_prize_type`, on by default).
+
+When **off**:
+
+- "Held-back Prize" is hidden from the Rule type dropdown (Add Rule modal and rows), and the
+  "Hold all in group" toolbar is hidden.
+- No rule can be switched to Held-back — the save path (including CSV import) falls back to Instant.
+- Rules **already** set to Held-back are grandfathered and keep their full lifecycle: public
+  display, Activate / Edit number / Deactivate, the mandatory auto-activation safety net, dashboard
+  warnings and the end-of-competition draw. The "Held-back settings" block (auto % / warn %) stays
+  visible on products that still have held rules.
+
+Developer lock — overrides the setting and greys out the checkbox:
 
 ```php
 // wp-config.php
-define( 'NERA_IWT_ENABLE_HELD_PRIZE_TYPE', 1 );
+define( 'NERA_IWT_ENABLE_HELD_PRIZE_TYPE', 0 ); // or 1
 ```
 
-Then on the product's instant-win rules: **Add Rule → Rule type → "Held-back Prize" → Save**. Leave
-the ticket number blank. In the rules table the row shows an **Activate** control.
+With the type on, on a User Chooses product's instant-win rules: **Add Rule → Rule type →
+"Held-back Prize" → Save**. Leave the ticket number blank. In the rules table the row shows an
+**Activate** control.
 
 ## Rule type & state
 
