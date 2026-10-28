@@ -4,7 +4,7 @@ Tags: woocommerce, lottery, instant win, competition, giveaway
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.0.38
+Stable tag: 1.0.39
 License: GPLv2 or later
 
 Instant win rule types, public prize visibility, and optional instant-win UI overrides for Lottery for WooCommerce.
@@ -26,6 +26,11 @@ This plugin extends **Lottery for WooCommerce** (Giveaway for WooCommerce) with:
 3. Configure instant win rules and visibility on competition products as supported by your theme and Lottery for WooCommerce.
 
 == Changelog ==
+
+= 1.0.39 =
+* Feature - Site-wide Held-back Prize switch in WooCommerce → Settings → Products → Nera Instant Wins (on by default). When off, no prize can be created as or switched to Held-back; prizes already Held-back keep working until won or switched away.
+* Feature - `NERA_IWT_ENABLE_HELD_PRIZE_TYPE` in wp-config still overrides the setting and locks the checkbox; it is no longer defined by default.
+* Fix - “Hold all in group” and the Held-back settings block now actually hide when the Held-back type is disabled (the stringified "0" flag was treated as truthy).
 
 = 1.0.37 =
 * Fix - Resolve product id in the Add Rule modal after LFW AJAX so Held-back Rule type options stay correct on User Chooses products.
