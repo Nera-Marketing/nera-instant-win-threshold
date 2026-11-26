@@ -297,6 +297,7 @@ require_once NERA_IWT_PLUGIN_DIR . 'inc/ticket-pool-feasibility.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-instant-win-export-import.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-instant-winner-order-link.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-instant-winner-lock.php';
+require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-instant-winner-image-fix.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-hide-export-import-buttons.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/admin-settings.php';
 require_once NERA_IWT_PLUGIN_DIR . 'inc/visibility.php';
