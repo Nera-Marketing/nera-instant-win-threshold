@@ -182,6 +182,13 @@ function nera_iwt_rest_instant_wins_build_payload( $product_id ) {
 			? (string) $product->get_lty_instant_winner_display_mode()
 			: '1';
 
+		// "Instant Win Prize Image" product setting — same check already used
+		// correctly by nera_iwt_rest_build_group_prizes() for group mode; this
+		// default (non-group) branch was missing it entirely.
+		$image_on = ( $product && method_exists( $product, 'get_lty_display_instant_winner_image' ) )
+			? ( '1' === (string) $product->get_lty_display_instant_winner_image() )
+			: true;
+
 		$instant_winner_ids = nera_iwt_get_rest_instant_winner_log_ids( $product_id );
 
 		if ( empty( $instant_winner_ids ) ) {
@@ -241,7 +248,7 @@ function nera_iwt_rest_instant_wins_build_payload( $product_id ) {
 			$prizes_grouped[ $key ] = array(
 				'id'              => $key,
 				'title'           => wp_strip_all_tags( $prize_message ),
-				'image'           => nera_iwt_rest_instant_wins_extract_image_url( $rep_winner->get_image() ),
+				'image'           => $image_on ? nera_iwt_rest_instant_wins_extract_image_url( $rep_winner->get_image() ) : null,
 				'total_available' => 0,
 				'won_count'       => 0,
 				'winners'         => array(),
